@@ -1,264 +1,257 @@
-# NetPulse Monitor — Проект документации для AI-ассистентов
+<!--
+╔═════════════════════════════════════════════════════════════════════════════╗
+║                        IMMUTABLE GOVERNANCE BLOCK                           ║
+║           Этот блок не изменяется ни Claude, ни Codex, ни кем-либо          ║
+║                      кроме владельца проекта                                ║
+╠═════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  ИЕРАРХИЯ РЕШЕНИЙ:                                                          ║
+║    1. Владелец            — абсолютный приоритет, решения безоговорочны     ║
+║    2. Claude              — архитектурные и технические решения             ║
+║    3. Codex               — исполнение конкретных задач по готовому ТЗ      ║
+║                                                                             ║
+║  ПРАВИЛА ДЛЯ CODEX:                                                         ║
+║    - Codex не проектирует архитектуру и не меняет структуру классов         ║
+║    - Codex получает конкретную задачу ("реализуй X вот так") и выполняет    ║
+║    - При конфликте решений Claude и Codex — приоритет у Claude              ║
+║    - Codex не редактирует этот файл                                         ║
+║                                                                             ║
+║  ПРАВИЛА ДЛЯ CLAUDE:                                                        ║
+║    - Claude не редактирует этот (IMMUTABLE GOVERNANCE) блок                 ║
+║    - Claude не редактирует блок IMMUTABLE PROJECT SPEC ниже                 ║
+║    - Изменения в остальных разделах помечаются: LLM Claude: <описание>::    ║
+║    - Решения Claude считаются более технически корректными, чем Codex       ║
+║                                                                             ║
+║  ЦЕЛЬ ФАЙЛА:                                                                ║
+║    Единый источник истины для AI-ассистентов. Проект движется               ║
+║    в одном направлении, без архитектурных конфликтов.                       ║
+║                                                                             ║
+╚═════════════════════════════════════════════════════════════════════════════╝
+-->
 
-## 🎯 Описание проекта
+<!--
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                       IMMUTABLE PROJECT SPEC                                 ║
+║     Базовые параметры проекта — не изменяются без решения владельца          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  Проект:      NetPulse Monitor                                               ║
+║  Тип:         Графический дашборд мониторинга сети (Linux)                   ║
+║  Платформа:   Linux, требуется root (uid=0)                                  ║
+║  Язык:        C++20                                                          ║
+║  Графика:     SFML 2.6+  (рендеринг ТОЛЬКО в главном потоке)                 ║
+║  Сборка:      CMake                                                          ║
+║  Зависимости: libcurl (HTTP API), libpcap (перехват пакетов)                 ║
+║  Окно:        Resizable, заголовок "NetPulse Monitor"                        ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+-->
 
-**NetPulse Monitor** — это консольно-графический дашборд для мониторинга сетевой активности Linux-системы в реальном времени.
+# NetPulse Monitor — AI Context Document
 
-**Цель:** Создать инструмент, который визуализирует сетевые подключения, устройства в сети, системные утилиты и входящие/исходящие запросы с использованием SFML для графического интерфейса.
+## Архитектура
 
-**Платформа:** Linux (требуется root / uid=0)
-**Язык:** C++17 или C++20
-**Графика:** SFML 2.6+
-**Сборка:** CMake
-**Внешние зависимости:** libcurl (для HTTP-запросов к API), libpcap (для перехвата пакетов)
+```
+ApplicationController  (main loop, SFML window, events, thread coordination)
+         │
+ ┌───────┼───────┐
+ │       │       │
+Data   Render  Shared
+Layer  Layer   Data
+```
 
----
+<!-- LLM Claude: обновлено описание классов, добавлен статус реализации M2:: -->
 
-## 🧱 Функциональные блоки
+## Data Layer
 
-### Блок 1: System Info (Версии сетевых утилит)
+### `IDataProvider` — абстрактный интерфейс
+Базовый класс для всех провайдеров. Два метода: `fetch()` — вызывается из Data-потока по таймеру, `stop()` — сигнал остановки. Все провайдеры наследуют этот интерфейс и регистрируются в `ApplicationController`.
 
-| Утилита | Описание | Команда проверки |
-|---------|----------|------------------|
-| OpenSSH | Версия SSH-клиента/сервера | ssh -V |
-| Docker | Версия Docker-демона | docker --version |
-| OpenSSL | Версия OpenSSL | openssl version |
-| rfkill | Статус блокировки устройств | rfkill list |
-| NetworkManager | Статус сетевого менеджера | systemctl is-active NetworkManager |
-| dhcpd/dhclient | DHCP-клиент/сервер | dhclient -version |
-| systemd | Версия systemd | systemctl --version |
-| iptables/nftables | Статус фаервола | iptables --version |
+### `SystemInfoProvider`
+Версии и статусы: OpenSSH, Docker, OpenSSL, rfkill, NetworkManager, dhclient, systemd, iptables/nftables. Источник: `popen()` с жёстким whitelist команд. Три состояния: активно / неактивно / не установлено.
 
-**Требования:**
-- Вывод в виде списка: Название: Версия / Статус
-- Цветовая индикация: Активно, Неактивно, Не установлено
+### `PacketSnifferProvider`
+Перехват пакетов через libpcap (root). Порты 80, 443, 8080 и др. Парсит HTTP-заголовки из TCP-потока. Поля записи: метод, путь, timestamp, src IP:port. Пишет в `ThreadSafeQueue` для передачи в рендер.
 
----
+### `ExternalAPIProvider`
+HTTPS через libcurl к `2ip.io`, `ipapi.co`. Запрос при старте + каждые 5–10 мин. Результат кэшируется. Работает в отдельном API-потоке — main thread не блокирует. Отдаёт: IP, провайдер, город/страна.
 
-### Блок 2: Request Log (Перехват запросов)
+### `NetworkDeviceProvider`
+Читает `/proc/net/arp`. Поля: IP, MAC, интерфейс, статус. Ping по клику — опционально.
 
-| Метод | Цвет | Описание |
-|-------|------|----------|
-| GET | Зеленый | Запрос данных |
-| POST | Красный | Отправка данных |
-| PUT | Желтый | Обновление ресурса |
-| DELETE | Синий | Удаление ресурса |
-| PATCH | Оранжевый | Частичное обновление |
-| OPTIONS/HEAD | Фиолетовый | Служебные запросы |
-| UNKNOWN | Серый | Нераспознанный тип |
-
-**Источник данных:**
-- Перехват пакетов через libpcap (требует root)
-- Парсинг HTTP-заголовков из TCP-потока (порты 80, 443, 8080, etc.)
-- Альтернатива: чтение из /var/log/ (если есть логи прокси/веб-сервера)
-
-**Требования:**
-- Лог в реальном времени (скользящее окно, последние 50-100 записей)
-- Цветная индикация метода
-- Отображение: timestamp, источник (IP:порт), метод, путь (если доступно)
-
----
-
-### Блок 3: External IP Info (Внешний IP через API)
-
-| Данные | API Endpoint |
-|--------|--------------|
-| Внешний IP | https://2ip.io/json/ |
-| Провайдер | https://ipapi.com/json/ |
-| Локация | https://ipapi.co/json/ |
-
-**Библиотека:** libcurl (асинхронные HTTPS-запросы)
-
-**Требования:**
-- Запрос при запуске + обновление по таймеру (каждые 5-10 минут)
-- Кэширование результата (не спамить API)
-- Отображение: IP, Провайдер, Город/Страна
-
----
-
-### Блок 4: Network Devices (Устройства в сети)
-
-| Данные | Источник |
-|--------|----------|
-| IP-адреса устройств | /proc/net/arp |
-| MAC-адреса | /proc/net/arp |
-| Производитель (Vendor) | OUI-база по MAC (опционально) |
-| Статус (Онлайн/Офлайн) | Ping-тест по клику (опционально) |
-
-**Требования:**
-- Список всех устройств, видимых в ARP-таблице
-- Отображение: IP, MAC, Интерфейс, Статус
+### `ConnectionProvider`
+Читает `/proc/net/tcp` и `/proc/net/udp`. Парсит hex через `NetworkUtils`. Поля: локальный адрес, удалённый адрес, статус (ESTABLISHED / LISTEN / TIME_WAIT). Данные идут в `ConnectionVisualizer`.
 
 ---
 
-### Блок 5: Active Connections Visualization (Визуализация подключений)
+## Render Layer
 
-| Данные | Источник |
-|--------|----------|
-| Активные TCP-подключения | /proc/net/tcp |
-| Активные UDP-подключения | /proc/net/udp |
-| Состояние соединения | Статус из /proc/net/tcp (ESTABLISHED, LISTEN, TIME_WAIT...) |
-| Порт назначения | Парсинг hex из /proc/net/tcp |
+### `IRenderer` — абстрактный интерфейс
+Один метод: `draw(sf::RenderWindow&)`. Вызывается только из главного потока.
 
-**Визуализация:**
-- Центральный узел = локальная машина
-- Линии к удалённым узлам = активные подключения
-- Цвет линии = статус (ESTABLISHED, LISTEN, CLOSED/TIME_WAIT)
-- Анимация частиц вдоль линий = активность трафика
-- По клику на узел = детальная информация (IP, порт, процесс если доступно)
+### `DashboardRenderer`
+Компонует и рисует все пять блоков. Читает из `DataManager`. Знает расположение, размеры, цветовые схемы блоков.
 
----
+### `ConnectionVisualizer`
+Граф подключений. Центр = локальная машина, линии = соединения из `ConnectionProvider`. Цвет линии: зелёный (ESTABLISHED), жёлтый (LISTEN), серый (TIME_WAIT). Анимация частиц = трафик. Клик = детали.
 
-## 🏗️ Архитектура
+### `UI::Panel`
+Прямоугольник с фоном и рамкой. Базовый контейнер блоков дашборда.
 
-ApplicationController (Main Loop, SFML Window, Events, Thread Coordination)
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-  DataLayer             RenderLayer           SharedData
-  (Providers)           (SFML)                (Mutex)
+### `UI::TextBlock`
+Текст моноширинным шрифтом с цветом. Используется в логах, списках, статусах.
 
-### Классы DataLayer
-
-| Класс | Ответственность |
-|-------|-----------------|
-| IDataProvider | Абстрактный интерфейс для всех провайдеров |
-| SystemInfoProvider | Сбор версий утилит (popen) |
-| PacketSnifferProvider | Перехват пакетов (libpcap) |
-| ExternalAPIProvider | HTTP-запросы к API (libcurl) |
-| NetworkDeviceProvider | ARP-таблица, устройства |
-| ConnectionProvider | Активные TCP/UDP подключения |
-
-### Классы RenderLayer
-
-| Класс | Ответственность |
-|-------|-----------------|
-| IRenderer | Абстрактный интерфейс рендерера |
-| DashboardRenderer | Отрисовка всех блоков дашборда |
-| ConnectionVisualizer | Визуализация узлов и линий подключений |
-| UI/* | Базовые UI-элементы (Panel, TextBlock, Button) |
-
-### SharedData
-
-| Класс | Назначение |
-|-------|------------|
-| ThreadSafeQueue<T> | Очередь для передачи данных из Data → Render |
-| DataManager | Централизованное хранилище с mutex |
+### `UI::Button`
+Интерактивный элемент с hover/click. Используется для опциональных действий (например, ping в блоке Network Devices).
 
 ---
 
-## 📁 Структура проекта
+## Shared Data
 
+### `ThreadSafeQueue<T>` — header-only шаблон
+`std::mutex` + `std::condition_variable`. `push()` из Data/API потоков, `pop()` блокирующий из Render. `stop()` разблокирует ожидающие `pop()`. Живёт только в `.hpp` — требование C++ для шаблонов.
+
+### `DataManager` — header-only
+Централизованное хранилище. Render читает, Data пишет — всё под `std::mutex`. Поля расширяются по мере реализации блоков.
+
+---
+
+## Utils
+
+### `RootCheck` — header-only
+`namespace RootCheck { inline bool isRoot() }` — обёртка над `getuid() == 0`. Namespace нужен чтобы не конфликтовать с другими `isRoot` в проекте или библиотеках. Вызывается первой в `main()`.
+
+### `Logger`
+`Log::info()`, `Log::warn()`, `Log::error()` — вывод в stdout с меткой уровня.
+
+### `NetworkUtils`
+`hexToIP()` и `hexToPort()` — парсинг hex-строк из `/proc/net/tcp` и `/proc/net/udp`. Используется в `ConnectionProvider`.
+
+---
+
+## App
+
+### `Config.hpp` — все константы проекта
+```
+WINDOW_WIDTH/HEIGHT = 1280x720 (начальный размер, окно resizable)
+TARGET_FPS          = 60
+WINDOW_TITLE        = "NetPulse Monitor"
+BG_R/G/B            = 18,18,18  (тёмный фон)
+API_REFRESH_SEC     = 300.0     (5 мин)
+DATA_REFRESH_SEC    = 2.0
+REQUEST_LOG_LIMIT   = 100
+```
+
+### `ApplicationController`
+Владеет окном (`sf::Style::Default` = resizable). Главный цикл: `processEvents → update → render`. Закрытие: крестик или Escape. Шрифт (`DejaVuSansMono`) ищется по системным путям при старте.
+
+Пока провайдеры не реализованы — `renderPlaceholders()` рисует 5 блоков-заглушек с названиями. Заглушки пересчитываются под текущий размер окна каждый кадр — тянутся при resize.
+
+---
+
+## Структура проекта
+
+```
 NetPulse/
 ├── CMakeLists.txt
-├── llms.md                    # Этот файл
-├── src/
-│   ├── main.cpp               # Точка входа, проверка uid=0
+├── llms.md
+├── README.md
+├── .gitignore
+├── assets/fonts/
+├── cmake/
+├── include/
 │   ├── App/
-│   │   ├── ApplicationController.hpp/cpp
+│   │   ├── ApplicationController.hpp
 │   │   └── Config.hpp
 │   ├── Data/
 │   │   ├── IDataProvider.hpp
-│   │   ├── SystemInfoProvider.hpp/cpp
-│   │   ├── PacketSnifferProvider.hpp/cpp
-│   │   ├── ExternalAPIProvider.hpp/cpp
-│   │   ├── NetworkDeviceProvider.hpp/cpp
-│   │   └── ConnectionProvider.hpp/cpp
+│   │   ├── SystemInfoProvider.hpp
+│   │   ├── PacketSnifferProvider.hpp
+│   │   ├── ExternalAPIProvider.hpp
+│   │   ├── NetworkDeviceProvider.hpp
+│   │   └── ConnectionProvider.hpp
 │   ├── Render/
 │   │   ├── IRenderer.hpp
-│   │   ├── DashboardRenderer.hpp/cpp
-│   │   ├── ConnectionVisualizer.hpp/cpp
+│   │   ├── DashboardRenderer.hpp
+│   │   ├── ConnectionVisualizer.hpp
 │   │   └── UI/
-│   │       ├── Panel.hpp/cpp
-│   │       ├── TextBlock.hpp/cpp
-│   │       └── Button.hpp/cpp
+│   │       ├── Panel.hpp
+│   │       ├── TextBlock.hpp
+│   │       └── Button.hpp
 │   └── Utils/
 │       ├── ThreadSafeQueue.hpp
+│       ├── DataManager.hpp
 │       ├── Logger.hpp
 │       ├── NetworkUtils.hpp
-│       └── RootCheck.hpp      # Проверка uid=0
-├── assets/
-│   └── fonts/                 # Шрифты для SFML
-└── README.md
+│       └── RootCheck.hpp
+└── src/
+    ├── main.cpp
+    ├── App/ApplicationController.cpp
+    ├── Data/
+    │   ├── SystemInfoProvider.cpp
+    │   ├── PacketSnifferProvider.cpp
+    │   ├── ExternalAPIProvider.cpp
+    │   ├── NetworkDeviceProvider.cpp
+    │   └── ConnectionProvider.cpp
+    ├── Render/
+    │   ├── DashboardRenderer.cpp
+    │   ├── ConnectionVisualizer.cpp
+    │   └── UI/
+    │       ├── Panel.cpp
+    │       ├── TextBlock.cpp
+    │       └── Button.cpp
+    └── Utils/
+        ├── Logger.cpp
+        ├── NetworkUtils.cpp
+        └── RootCheck.cpp
+```
 
 ---
 
-## ⚙️ Технические требования
+## Блоки данных
 
-### 1. Проверка root-прав
-При запуске, до инициализации всего остального:
-if (getuid() != 0) {
-    std::cerr << "Error: NetPulse Monitor requires root privileges (uid=0)" << std::endl;
-    return 1;
-}
+**Блок 1 — System Info:** утилиты через `popen()`. Цвета: активно / неактивно / не установлено.
 
-### 2. Многопоточность
-- Thread 1 (Main): SFML рендеринг, обработка событий
-- Thread 2 (Data): Сбор данных (провайдеры опрашиваются по таймеру)
-- Thread 3 (API): Асинхронные HTTP-запросы (libcurl)
-- Синхронизация: std::mutex + std::condition_variable или ThreadSafeQueue
+**Блок 2 — Request Log:** libpcap, скользящее окно 50–100 записей. GET=зелёный, POST=красный, PUT=жёлтый, DELETE=синий, PATCH=оранжевый, OPTIONS/HEAD=фиолетовый, UNKNOWN=серый.
 
-### 3. Источники данных
-| Тип | Источник | Примечание |
-|-----|----------|------------|
-| Версии утилит | popen() | Whitelist команд, никакой инъекции |
-| Пакеты | libpcap | Требует root, фильтр по портам |
-| API | libcurl | Не блокировать main thread |
-| ARP/Подключения | /proc/net/* | Чтение файлов, парсинг строк |
+**Блок 3 — External IP:** libcurl → `2ip.io` / `ipapi.co`. IP, провайдер, город/страна. Кэш + таймер.
 
-### 4. Безопасность
-- Никаких system() с пользовательским вводом
-- Whitelist команд для popen()
-- Валидация всех данных перед отображением
-- Таймауты для всех внешних запросов
+**Блок 4 — Network Devices:** `/proc/net/arp`. IP, MAC, интерфейс, статус.
+
+**Блок 5 — Connection Visualization:** `/proc/net/tcp` + `/proc/net/udp`. Граф, цвет по статусу, частицы, клик = детали.
 
 ---
 
-## 🎨 Визуальный стиль
+## Технические требования
 
-На усмотрение разработчика. Рекомендации:
-- Тёмный фон (меньше нагрузка на глаза)
-- Цветовая схема: Gruvbox или Neon/Cyberpunk
-- Моноширинный шрифт для логов и данных
-- Анимация: частицы для трафика, пульсация для активных подключений
+**Потоки:**
+- Thread 1 (Main): SFML рендеринг + события
+- Thread 2 (Data): опрос провайдеров по таймеру
+- Thread 3 (API): libcurl запросы
+- Синхронизация: `ThreadSafeQueue` + `DataManager` с `std::mutex`
+
+**Безопасность:** whitelist для `popen()`, никаких `system()` с вводом, валидация внешних данных, таймауты для HTTP.
+
+**Root:** `RootCheck::isRoot()` — первое в `main()`, до любой инициализации.
 
 ---
 
-## 📋 План реализации (Milestones)
+## Визуальный стиль
 
-| Этап | Задачи | Статус |
-|------|--------|--------|
-| M1 | Настройка проекта (CMake, SFML, libcurl) | ⬜ |
-| M2 | Проверка root, базовое окно SFML | ⬜ |
-| M3 | Блок 1: System Info (версии утилит) | ⬜ |
+Тёмный фон `#121212`. Моноширинный шрифт (DejaVuSansMono). Схемы: Gruvbox или Material Design Green. Анимации: частицы для трафика, пульсация для активных подключений.
+
+---
+
+## Milestones
+
+| # | Задача | Статус |
+|---|---|---|
+| M1 | CMake + SFML + libcurl + libpcap | ✅ |
+| M2 | Root-проверка + базовое окно SFML | ✅ |
+| M3 | Блок 1: System Info | ⬜ |
 | M4 | Блок 4: Network Devices (ARP) | ⬜ |
 | M5 | Блок 5: Connection Visualization | ⬜ |
 | M6 | Блок 3: External IP (libcurl) | ⬜ |
 | M7 | Блок 2: Packet Sniffer (libpcap) | ⬜ |
-| M8 | Полировка, UI, анимации | ⬜ |
-| M9 | Документация, README, запись демо | ⬜ |
-
----
-
-## 🔧 Для AI-ассистентов
-
-При генерации кода следуй правилам:
-1. C++17/20: Используй современные возможности (smart pointers, auto, ranges если C++20)
-2. ООП: Следуй архитектуре из этого документа
-3. Безопасность: Проверяй все внешние данные
-4. Потоки: Не блокируй main thread долгими операциями
-5. SFML: Рендеринг только в главном потоке
-6. Комментарии: Пиши пояснения для сложных участков кода
-
-При обновлении этого файла:
-- Добавляй новые классы/модули в соответствующие разделы
-- Обновляй статус Milestones
-- Документируй изменения в архитектуре
-
----
-
-## 📝 Примечания
-
-- Информация об авторе, платформе и репозитории добавляется в README.md
-- Этот файл (llms.md) используется как контекст для AI-ассистентов при разработке
-- При изменении архитектуры обновляй соответствующие разделы этого файла
+| M8 | UI-полировка, анимации | ⬜ |
+| M9 | README, документация, демо | ⬜ |
