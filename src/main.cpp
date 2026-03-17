@@ -1,18 +1,20 @@
 #include <cstdlib>
 #include <iostream>
-#include <unistd.h>
 
 #include "Utils/RootCheck.hpp"
+#include "App/ApplicationController.hpp"
 
 int main()
 {
-    // M2: Проверка root — первое, что происходит
-    if (getuid() != 0) {
-        std::cerr << "[NetPulse] Error: requires root privileges (uid=0)\n";
+    // M2: Проверка root — первое, до любой инициализации
+    if (!RootCheck::isRoot()) {
+        std::cerr << "[NetPulse] Error: requires root privileges (uid=0)\n"
+                  << "[NetPulse] Run: sudo ./NetPulseMonitor\n";
         return EXIT_FAILURE;
     }
 
-    // TODO M2: инициализация ApplicationController и главный цикл
+    ApplicationController app;
+    app.run();
 
     return EXIT_SUCCESS;
 }
