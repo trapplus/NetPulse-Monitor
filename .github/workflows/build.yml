@@ -1,0 +1,48 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'          # Триггер только на теги вида v0.1.0, v1.2.3 и т.д.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build in Arch Linux container
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/project \
+            -w /project \
+            archlinux:latest \
+            bash -c "
+              pacman -Syu --noconfirm &&
+              pacman -S --noconfirm cmake clang sfml libpcap curl &&
+              cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER=clang \
+                -DCMAKE_CXX_COMPILER=clang++ &&
+              cmake --build build -j\$(nproc)
+            "
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/NetPulseMonitor
+          name: NetPulse Monitor ${{ github.ref_name }}
+          body: |
+            ## NetPulse Monitor ${{ github.ref_name }}
+            
+            Built on Arch Linux (latest) with clang.
+            
+            **Run:**
+            ```bash
+            chmod +x NetPulseMonitor
+            xhost +local: && sudo -E ./NetPulseMonitor
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
