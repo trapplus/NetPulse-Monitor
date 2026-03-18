@@ -3,7 +3,7 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'          # Триггер только на теги вида v0.1.0, v1.2.3 и т.д.
+      - 'v*'
 
 jobs:
   build:
@@ -19,16 +19,7 @@ jobs:
             -v ${{ github.workspace }}:/project \
             -w /project \
             archlinux:latest \
-            bash -c "
-              pacman -Syu --noconfirm &&
-              pacman -S --noconfirm cmake clang sfml libpcap curl ninja &&
-              cmake -B build \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ 
-                -GNinja &&
-              cmake --build build -j\$(nproc)
-            "
+            bash -c "pacman -Syu --noconfirm && pacman -S --noconfirm cmake clang sfml libpcap curl ninja && cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -GNinja && ninja -C build"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -37,9 +28,9 @@ jobs:
           name: NetPulse Monitor ${{ github.ref_name }}
           body: |
             ## NetPulse Monitor ${{ github.ref_name }}
-            
+
             Built on Arch Linux (latest) with clang.
-            
+
             **Run:**
             ```bash
             chmod +x NetPulseMonitor
