@@ -21,11 +21,12 @@ jobs:
             archlinux:latest \
             bash -c "
               pacman -Syu --noconfirm &&
-              pacman -S --noconfirm cmake clang sfml libpcap curl &&
+              pacman -S --noconfirm cmake clang sfml libpcap curl ninja &&
               cmake -B build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ &&
+                -DCMAKE_CXX_COMPILER=clang++ 
+                -GNinja &&
               cmake --build build -j\$(nproc)
             "
 
