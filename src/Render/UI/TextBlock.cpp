@@ -2,11 +2,7 @@
 
 namespace UI {
 
-TextBlock::TextBlock() {}
+TextBlock::TextBlock() = default;
+void TextBlock::draw(sf::RenderWindow& /*window*/) { /* TODO M8 */ }
 
-void TextBlock::draw(sf::RenderWindow& /*window*/)
-{
-    // TODO
 }
-
-} // namespace UI

@@ -1,9 +1,6 @@
 #include "Render/ConnectionVisualizer.hpp"
 
-ConnectionVisualizer::ConnectionVisualizer() {}
-ConnectionVisualizer::~ConnectionVisualizer() {}
+ConnectionVisualizer::ConnectionVisualizer() = default;
+ConnectionVisualizer::~ConnectionVisualizer() = default;
 
-void ConnectionVisualizer::draw(sf::RenderWindow& /*window*/)
-{
-    // TODO
-}
+void ConnectionVisualizer::draw(sf::RenderWindow& /*window*/) { /* TODO M5 */ }

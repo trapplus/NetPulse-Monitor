@@ -2,11 +2,7 @@
 
 namespace UI {
 
-Button::Button() {}
+Button::Button() = default;
+void Button::draw(sf::RenderWindow& /*window*/) { /* TODO M8 */ }
 
-void Button::draw(sf::RenderWindow& /*window*/)
-{
-    // TODO
 }
-
-} // namespace UI

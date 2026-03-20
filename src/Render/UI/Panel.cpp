@@ -2,11 +2,7 @@
 
 namespace UI {
 
-Panel::Panel() {}
+Panel::Panel() = default;
+void Panel::draw(sf::RenderWindow& /*window*/) { /* TODO M8 */ }
 
-void Panel::draw(sf::RenderWindow& /*window*/)
-{
-    // TODO
 }
-
-} // namespace UI
