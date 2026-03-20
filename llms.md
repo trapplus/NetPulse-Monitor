@@ -39,8 +39,11 @@
 ║  Тип:         Графический дашборд мониторинга сети (Linux)                   ║
 ║  Платформа:   Linux, требуется root (uid=0)                                  ║
 ║  Язык:        C++20                                                          ║
+║  Компилятор:  clang++ 22.x (Arch Linux)                                      ║
+║  STL:         libstdc++ (GCC) — libc++                                       ║
+║  LSP/линтер:  clangd (Zed)                                                   ║
 ║  Графика:     SFML 3.x   (рендеринг ТОЛЬКО в главном потоке)                 ║
-║  Сборка:      CMake                                                          ║
+║  Сборка:      CMake + Ninja                                                  ║
 ║  Зависимости: libcurl (HTTP API), libpcap (перехват пакетов)                 ║
 ║  Окно:        Resizable, заголовок "NetPulse Monitor"                        ║
 ║                                                                              ║
@@ -48,6 +51,53 @@
 -->
 
 # NetPulse Monitor — AI Context Document
+
+<!-- LLM Claude: добавлены правила по toolchain, includes и комментариям, уточнено правило includes:: -->
+
+## Правила для AI-ассистентов
+
+### Toolchain
+- Компилятор: `clang++ 22.x`, стандарт C++20, STL: `libstdc++`
+- LSP: `clangd` — его предупреждения имеют приоритет над догадками модели
+- Сборка локально: `make build` (CMake + Ninja)
+- Сборка в CI: Docker `archlinux:latest`, те же флаги
+
+### Правила по `#include`
+- Каждый используемый символ должен иметь явный `#include` в том файле где используется
+- Transitive includes не считаются надёжными — даже если работают на нашей платформе, это деталь реализации которая может измениться
+- Исключение явного include не допускается без комментария объясняющего почему
+- Системные POSIX заголовки (`<unistd.h>`, `<arpa/inet.h>`, `<pcap.h>`) — всегда явно
+
+**Документирование опциональных includes:**
+
+Когда include транзитивно приходит через другой заголовок и сознательно не дублируется:
+```cpp
+// <string> comes in via IDataProvider.hpp, no need to re-include
+```
+
+Когда include добавлен явно хотя технически транзитивный — объяснить почему:
+```cpp
+// explicit include — popen/fgets are C stdio, not guaranteed through SFML headers
+#include <cstdio>
+```
+
+### Правила по комментариям
+- Язык: английский, разговорный стиль — как пишет живой человек, не LLM
+- Комментировать why и неочевидные решения, не what
+- Никакого JavaDoc-стиля, никаких `// This function iterates over the collection`
+- Хорошо: `// grab first line and strip the newline`, `// don't block main thread here`
+- Плохо: `// This method retrieves the version string of the specified utility`
+- Каждый нетривиальный логический блок — минимум одна строка комментария
+
+### Общие правила кода
+- Никаких `system()` с пользовательским вводом — только `popen()` с whitelist
+- Не блокировать main thread долгими операциями
+- SFML: рендеринг и события только в главном потоке
+- Потокобезопасность: данные между потоками только через mutex или ThreadSafeQueue
+- Smart pointers везде где есть владение (`unique_ptr`, `shared_ptr`)
+- `= default` и `= delete` предпочтительнее пустых реализаций
+
+---
 
 ## Архитектура
 
@@ -60,92 +110,82 @@ Data   Render  Shared
 Layer  Layer   Data
 ```
 
-<!-- LLM Claude: обновлено описание классов, добавлен статус реализации M2:: -->
-
 ## Data Layer
 
 ### `IDataProvider` — абстрактный интерфейс
-Базовый класс для всех провайдеров. Два метода: `fetch()` — вызывается из Data-потока по таймеру, `stop()` — сигнал остановки. Все провайдеры наследуют этот интерфейс и регистрируются в `ApplicationController`.
+Базовый класс для всех провайдеров. `fetch()` — вызывается из Data-потока по таймеру, `stop()` — сигнал остановки. Все провайдеры регистрируются в `DataManager`.
 
-### `SystemInfoProvider`
-Версии и статусы: OpenSSH, Docker, OpenSSL, rfkill, NetworkManager, dhclient, systemd, iptables/nftables. Источник: `popen()` с жёстким whitelist команд. Три состояния: активно / неактивно / не установлено.
+### `SystemInfoProvider` ✅
+Версии и статусы: OpenSSH, Docker, OpenSSL, rfkill, NetworkManager, dhclient, systemd, iptables/nftables. `popen()` с жёстким whitelist команд. Три состояния: Active / Inactive / NotInstalled. Обновление каждые 30 сек.
 
 ### `PacketSnifferProvider`
-Перехват пакетов через libpcap (root). Порты 80, 443, 8080 и др. Парсит HTTP-заголовки из TCP-потока. Поля записи: метод, путь, timestamp, src IP:port. Пишет в `ThreadSafeQueue` для передачи в рендер.
+Перехват пакетов через libpcap (root). Порты 80, 443, 8080 и др. Парсит HTTP-заголовки из TCP-потока. Пишет в `ThreadSafeQueue`.
 
 ### `ExternalAPIProvider`
-HTTPS через libcurl к `2ip.io`, `ipapi.co`. Запрос при старте + каждые 5–10 мин. Результат кэшируется. Работает в отдельном API-потоке — main thread не блокирует. Отдаёт: IP, провайдер, город/страна.
+HTTPS через libcurl к `2ip.io`, `ipapi.co`. Запрос при старте + каждые 5–10 мин. Кэш. Не блокирует main thread.
 
 ### `NetworkDeviceProvider`
-Читает `/proc/net/arp`. Поля: IP, MAC, интерфейс, статус. Ping по клику — опционально.
+Читает `/proc/net/arp`. IP, MAC, интерфейс, статус.
 
 ### `ConnectionProvider`
-Читает `/proc/net/tcp` и `/proc/net/udp`. Парсит hex через `NetworkUtils`. Поля: локальный адрес, удалённый адрес, статус (ESTABLISHED / LISTEN / TIME_WAIT). Данные идут в `ConnectionVisualizer`.
+Читает `/proc/net/tcp` и `/proc/net/udp`. Парсит hex через `NetworkUtils`.
 
 ---
 
 ## Render Layer
 
 ### `IRenderer` — абстрактный интерфейс
-Один метод: `draw(sf::RenderWindow&)`. Вызывается только из главного потока.
+`draw(sf::RenderWindow&)` — только из главного потока.
 
 ### `DashboardRenderer`
-Компонует и рисует все пять блоков. Читает из `DataManager`. Знает расположение, размеры, цветовые схемы блоков.
+Компонует все пять блоков. Читает из `DataManager`.
 
 ### `ConnectionVisualizer`
-Граф подключений. Центр = локальная машина, линии = соединения из `ConnectionProvider`. Цвет линии: зелёный (ESTABLISHED), жёлтый (LISTEN), серый (TIME_WAIT). Анимация частиц = трафик. Клик = детали.
+Граф подключений. Цвет линии: зелёный (ESTABLISHED), жёлтый (LISTEN), серый (TIME_WAIT). Анимация частиц. Клик = детали.
 
-### `UI::Panel`
-Прямоугольник с фоном и рамкой. Базовый контейнер блоков дашборда.
-
-### `UI::TextBlock`
-Текст моноширинным шрифтом с цветом. Используется в логах, списках, статусах.
-
-### `UI::Button`
-Интерактивный элемент с hover/click. Используется для опциональных действий (например, ping в блоке Network Devices).
+### `UI::Panel`, `UI::TextBlock`, `UI::Button`
+Базовые UI-компоненты. Button поддерживает hover/click.
 
 ---
 
 ## Shared Data
 
-### `ThreadSafeQueue<T>` — header-only шаблон
-`std::mutex` + `std::condition_variable`. `push()` из Data/API потоков, `pop()` блокирующий из Render. `stop()` разблокирует ожидающие `pop()`. Живёт только в `.hpp` — требование C++ для шаблонов.
+### `ThreadSafeQueue<T>` — header-only
+`push()` из Data/API потоков, блокирующий `pop()`, `stop()` для завершения.
 
 ### `DataManager` — header-only
-Централизованное хранилище. Render читает, Data пишет — всё под `std::mutex`. Поля расширяются по мере реализации блоков.
+Владеет провайдерами через `unique_ptr`. Render читает через методы провайдеров под их внутренним mutex.
 
 ---
 
 ## Utils
 
 ### `RootCheck` — header-only
-`namespace RootCheck { inline bool isRoot() }` — обёртка над `getuid() == 0`. Namespace нужен чтобы не конфликтовать с другими `isRoot` в проекте или библиотеках. Вызывается первой в `main()`.
+`namespace RootCheck { inline bool isRoot() }` — первое в `main()`.
 
 ### `Logger`
-`Log::info()`, `Log::warn()`, `Log::error()` — вывод в stdout с меткой уровня.
+`Log::info/warn/error()` — stdout с меткой уровня.
 
 ### `NetworkUtils`
-`hexToIP()` и `hexToPort()` — парсинг hex-строк из `/proc/net/tcp` и `/proc/net/udp`. Используется в `ConnectionProvider`.
+`hexToIP()`, `hexToPort()` — парсинг `/proc/net/tcp` и `/proc/net/udp`.
 
 ---
 
 ## App
 
-### `Config.hpp` — все константы проекта
+### `Config.hpp`
 ```
-WINDOW_WIDTH/HEIGHT = 1280x720 (начальный размер, окно resizable)
+WINDOW_WIDTH/HEIGHT = 1280x720  (resizable)
 TARGET_FPS          = 60
 WINDOW_TITLE        = "NetPulse Monitor"
-BG_R/G/B            = 18,18,18  (тёмный фон)
-API_REFRESH_SEC     = 300.0     (5 мин)
+BG_R/G/B            = 18,18,18
+API_REFRESH_SEC     = 300.0
 DATA_REFRESH_SEC    = 2.0
 REQUEST_LOG_LIMIT   = 100
 ```
 
 ### `ApplicationController`
-Владеет окном (`sf::Style::Default` = resizable). Главный цикл: `processEvents → update → render`. Закрытие: крестик или Escape. Шрифт (`DejaVuSansMono`) ищется по системным путям при старте.
-
-Пока провайдеры не реализованы — `renderPlaceholders()` рисует 5 блоков-заглушек с названиями. Заглушки пересчитываются под текущий размер окна каждый кадр — тянутся при resize.
+Главный цикл: `processEvents → update → render`. Владеет `DataManager` и Data-потоком. Деструктор останавливает поток через `m_running = false` + `join()`.
 
 ---
 
@@ -154,71 +194,38 @@ REQUEST_LOG_LIMIT   = 100
 ```
 NetPulse/
 ├── CMakeLists.txt
+├── Makefile
 ├── llms.md
 ├── README.md
 ├── .gitignore
+├── .github/workflows/build.yml
 ├── assets/fonts/
-├── cmake/
 ├── include/
-│   ├── App/
-│   │   ├── ApplicationController.hpp
-│   │   └── Config.hpp
-│   ├── Data/
-│   │   ├── IDataProvider.hpp
-│   │   ├── SystemInfoProvider.hpp
-│   │   ├── PacketSnifferProvider.hpp
-│   │   ├── ExternalAPIProvider.hpp
-│   │   ├── NetworkDeviceProvider.hpp
-│   │   └── ConnectionProvider.hpp
-│   ├── Render/
-│   │   ├── IRenderer.hpp
-│   │   ├── DashboardRenderer.hpp
-│   │   ├── ConnectionVisualizer.hpp
-│   │   └── UI/
-│   │       ├── Panel.hpp
-│   │       ├── TextBlock.hpp
-│   │       └── Button.hpp
-│   └── Utils/
-│       ├── ThreadSafeQueue.hpp
-│       ├── DataManager.hpp
-│       ├── Logger.hpp
-│       ├── NetworkUtils.hpp
-│       └── RootCheck.hpp
+│   ├── App/    ApplicationController.hpp, Config.hpp
+│   ├── Data/   IDataProvider.hpp, *Provider.hpp
+│   ├── Render/ IRenderer.hpp, DashboardRenderer.hpp, ConnectionVisualizer.hpp, UI/
+│   └── Utils/  ThreadSafeQueue.hpp, DataManager.hpp, Logger.hpp, NetworkUtils.hpp, RootCheck.hpp
 └── src/
     ├── main.cpp
-    ├── App/ApplicationController.cpp
-    ├── Data/
-    │   ├── SystemInfoProvider.cpp
-    │   ├── PacketSnifferProvider.cpp
-    │   ├── ExternalAPIProvider.cpp
-    │   ├── NetworkDeviceProvider.cpp
-    │   └── ConnectionProvider.cpp
-    ├── Render/
-    │   ├── DashboardRenderer.cpp
-    │   ├── ConnectionVisualizer.cpp
-    │   └── UI/
-    │       ├── Panel.cpp
-    │       ├── TextBlock.cpp
-    │       └── Button.cpp
-    └── Utils/
-        ├── Logger.cpp
-        ├── NetworkUtils.cpp
-        └── RootCheck.cpp
+    ├── App/    ApplicationController.cpp
+    ├── Data/   *Provider.cpp
+    ├── Render/ *.cpp, UI/*.cpp
+    └── Utils/  Logger.cpp, NetworkUtils.cpp, RootCheck.cpp
 ```
 
 ---
 
 ## Блоки данных
 
-**Блок 1 — System Info:** утилиты через `popen()`. Цвета: активно / неактивно / не установлено.
+**Блок 1 — System Info ✅:** таблица имя | версия | статус. Цвета: зелёный/жёлтый/серый.
 
 **Блок 2 — Request Log:** libpcap, скользящее окно 50–100 записей. GET=зелёный, POST=красный, PUT=жёлтый, DELETE=синий, PATCH=оранжевый, OPTIONS/HEAD=фиолетовый, UNKNOWN=серый.
 
-**Блок 3 — External IP:** libcurl → `2ip.io` / `ipapi.co`. IP, провайдер, город/страна. Кэш + таймер.
+**Блок 3 — External IP:** libcurl → `2ip.io` / `ipapi.co`. IP, провайдер, город/страна.
 
 **Блок 4 — Network Devices:** `/proc/net/arp`. IP, MAC, интерфейс, статус.
 
-**Блок 5 — Connection Visualization:** `/proc/net/tcp` + `/proc/net/udp`. Граф, цвет по статусу, частицы, клик = детали.
+**Блок 5 — Connection Visualization:** граф, цвет по статусу, частицы, клик = детали.
 
 ---
 
@@ -228,17 +235,17 @@ NetPulse/
 - Thread 1 (Main): SFML рендеринг + события
 - Thread 2 (Data): опрос провайдеров по таймеру
 - Thread 3 (API): libcurl запросы
-- Синхронизация: `ThreadSafeQueue` + `DataManager` с `std::mutex`
+- Синхронизация: `ThreadSafeQueue` + внутренние mutex провайдеров
 
-**Безопасность:** whitelist для `popen()`, никаких `system()` с вводом, валидация внешних данных, таймауты для HTTP.
+**Root:** `RootCheck::isRoot()` — первое в `main()`.
 
-**Root:** `RootCheck::isRoot()` — первое в `main()`, до любой инициализации.
+**CI:** Ubuntu runner → Docker `archlinux:latest` → `pacman -Syu` → сборка clang+ninja → Release по тегу `v*`.
 
 ---
 
 ## Визуальный стиль
 
-Тёмный фон `#121212`. Моноширинный шрифт (DejaVuSansMono). Схемы: Gruvbox или Material Design Green. Анимации: частицы для трафика, пульсация для активных подключений.
+Тёмный фон `#121212`. Моноширинный шрифт (DejaVuSansMono). Gruvbox или Material Design Green. Частицы для трафика, пульсация для активных подключений.
 
 ---
 
@@ -248,7 +255,7 @@ NetPulse/
 |---|---|---|
 | M1 | CMake + SFML + libcurl + libpcap | ✅ |
 | M2 | Root-проверка + базовое окно SFML | ✅ |
-| M3 | Блок 1: System Info | ⬜ |
+| M3 | Блок 1: System Info | ✅ |
 | M4 | Блок 4: Network Devices (ARP) | ⬜ |
 | M5 | Блок 5: Connection Visualization | ⬜ |
 | M6 | Блок 3: External IP (libcurl) | ⬜ |
