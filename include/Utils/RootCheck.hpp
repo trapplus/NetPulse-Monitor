@@ -1,7 +1,8 @@
 #pragma once
-#include <unistd.h>
+#include <unistd.h>  // explicit - getuid() is POSIX, never comes transitively
 
+// simple namespace wrapper so we dont pollute global scope with isRoot
+// called first thing in main() before any initialization
 namespace RootCheck {
-    // Возвращает true если процесс запущен от root (uid=0)
     inline bool isRoot() { return ::getuid() == 0; }
 }

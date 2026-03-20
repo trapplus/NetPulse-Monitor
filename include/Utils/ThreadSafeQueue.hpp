@@ -1,9 +1,12 @@
 #pragma once
-#include <queue>
-#include <mutex>
 #include <condition_variable>
+#include <mutex>
 #include <optional>
+#include <queue>
 
+// a simple thread-safe queue used to pass data from provider threads to the render thread
+// push() is called from data/api threads, pop() blocks until something arrives
+// call stop() when shutting down so any blocked pop() wakes up and returns nullopt
 template<typename T>
 class ThreadSafeQueue
 {
@@ -12,9 +15,11 @@ public:
     {
         std::lock_guard lock(mutex_);
         queue_.push(std::move(value));
-        cv_.notify_one();
+        cv_.notify_one();  // wake up whoever is waiting in pop()
     }
 
+    // blocks until an item is available or stop() is called
+    // returns nullopt if the queue was stopped and is empty
     std::optional<T> pop()
     {
         std::unique_lock lock(mutex_);
@@ -25,6 +30,8 @@ public:
         return val;
     }
 
+    // signals all waiting pop() calls to wake up and return nullopt
+    // call this before joining any thread that blocks on pop()
     void stop()
     {
         std::lock_guard lock(mutex_);

@@ -1,6 +1,5 @@
 #include "Utils/Logger.hpp"
 #include <iostream>
-#include <chrono>
 
 namespace Log {
 

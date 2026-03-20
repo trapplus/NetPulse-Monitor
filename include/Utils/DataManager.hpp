@@ -1,19 +1,16 @@
 #pragma once
 #include "Data/SystemInfoProvider.hpp"
-#include <mutex>
-#include <string>
-#include <vector>
 #include <memory>
+#include <string>
 
-// Централизованное хранилище провайдеров и данных.
-// Render-поток читает через getData() методы провайдеров напрямую — под их mutex.
-// ApplicationController владеет провайдерами через unique_ptr.
+// central place that owns all data providers
+// ApplicationController creates and stores this, render methods read from it
+// each provider has its own internal mutex - no global lock needed here
 struct DataManager
 {
-    // Провайдеры — инициализируются в ApplicationController
     std::unique_ptr<SystemInfoProvider> systemInfo;
 
-    // Заглушки для будущих провайдеров
+    // placeholders for providers not yet implemented
     std::string externalIP;
     std::string isp;
     std::string location;
