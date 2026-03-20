@@ -6,14 +6,14 @@
 ╠═════════════════════════════════════════════════════════════════════════════╣
 ║                                                                             ║
 ║  ИЕРАРХИЯ РЕШЕНИЙ:                                                          ║
-║    1. Владелец            — абсолютный приоритет, решения безоговорочны     ║
-║    2. Claude              — архитектурные и технические решения             ║
-║    3. Codex               — исполнение конкретных задач по готовому ТЗ      ║
+║    1. Владелец            - абсолютный приоритет, решения безоговорочны     ║
+║    2. Claude              - архитектурные и технические решения             ║
+║    3. Codex               - исполнение конкретных задач по готовому ТЗ      ║
 ║                                                                             ║
 ║  ПРАВИЛА ДЛЯ CODEX:                                                         ║
 ║    - Codex не проектирует архитектуру и не меняет структуру классов         ║
 ║    - Codex получает конкретную задачу ("реализуй X вот так") и выполняет    ║
-║    - При конфликте решений Claude и Codex — приоритет у Claude              ║
+║    - При конфликте решений Claude и Codex - приоритет у Claude              ║
 ║    - Codex не редактирует этот файл                                         ║
 ║                                                                             ║
 ║  ПРАВИЛА ДЛЯ CLAUDE:                                                        ║
@@ -32,7 +32,7 @@
 <!--
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                       IMMUTABLE PROJECT SPEC                                 ║
-║     Базовые параметры проекта — не изменяются без решения владельца          ║
+║     Базовые параметры проекта - не изменяются без решения владельца          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
 ║  Проект:      NetPulse Monitor                                               ║
@@ -40,7 +40,7 @@
 ║  Платформа:   Linux, требуется root (uid=0)                                  ║
 ║  Язык:        C++20                                                          ║
 ║  Компилятор:  clang++ 22.x (Arch Linux)                                      ║
-║  STL:         libstdc++ (GCC) — libc++                                       ║
+║  STL:         libstdc++ (GCC) - libc++                                       ║
 ║  LSP/линтер:  clangd (Zed)                                                   ║
 ║  Графика:     SFML 3.x   (рендеринг ТОЛЬКО в главном потоке)                 ║
 ║  Сборка:      CMake + Ninja                                                  ║
@@ -50,7 +50,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 -->
 
-# NetPulse Monitor — AI Context Document
+# NetPulse Monitor - AI Context Document
 
 <!-- LLM Claude: добавлены правила по toolchain, includes и комментариям, уточнено правило includes:: -->
 
@@ -58,15 +58,15 @@
 
 ### Toolchain
 - Компилятор: `clang++ 22.x`, стандарт C++20, STL: `libstdc++`
-- LSP: `clangd` — его предупреждения имеют приоритет над догадками модели
+- LSP: `clangd` - его предупреждения имеют приоритет над догадками модели
 - Сборка локально: `make build` (CMake + Ninja)
 - Сборка в CI: Docker `archlinux:latest`, те же флаги
 
 ### Правила по `#include`
 - Каждый используемый символ должен иметь явный `#include` в том файле где используется
-- Transitive includes не считаются надёжными — даже если работают на нашей платформе, это деталь реализации которая может измениться
+- Transitive includes не считаются надёжными - даже если работают на нашей платформе, это деталь реализации которая может измениться
 - Исключение явного include не допускается без комментария объясняющего почему
-- Системные POSIX заголовки (`<unistd.h>`, `<arpa/inet.h>`, `<pcap.h>`) — всегда явно
+- Системные POSIX заголовки (`<unistd.h>`, `<arpa/inet.h>`, `<pcap.h>`) - всегда явно
 
 **Документирование опциональных includes:**
 
@@ -75,22 +75,22 @@
 // <string> comes in via IDataProvider.hpp, no need to re-include
 ```
 
-Когда include добавлен явно хотя технически транзитивный — объяснить почему:
+Когда include добавлен явно хотя технически транзитивный - объяснить почему:
 ```cpp
-// explicit include — popen/fgets are C stdio, not guaranteed through SFML headers
+// explicit include - popen/fgets are C stdio, not guaranteed through SFML headers
 #include <cstdio>
 ```
 
 ### Правила по комментариям
-- Язык: английский, разговорный стиль — как пишет живой человек, не LLM
+- Язык: английский, разговорный стиль - как пишет живой человек, не LLM
 - Комментировать why и неочевидные решения, не what
 - Никакого JavaDoc-стиля, никаких `// This function iterates over the collection`
 - Хорошо: `// grab first line and strip the newline`, `// don't block main thread here`
 - Плохо: `// This method retrieves the version string of the specified utility`
-- Каждый нетривиальный логический блок — минимум одна строка комментария
+- Каждый нетривиальный логический блок - минимум одна строка комментария
 
 ### Общие правила кода
-- Никаких `system()` с пользовательским вводом — только `popen()` с whitelist
+- Никаких `system()` с пользовательским вводом - только `popen()` с whitelist
 - Не блокировать main thread долгими операциями
 - SFML: рендеринг и события только в главном потоке
 - Потокобезопасность: данные между потоками только через mutex или ThreadSafeQueue
@@ -112,8 +112,8 @@ Layer  Layer   Data
 
 ## Data Layer
 
-### `IDataProvider` — абстрактный интерфейс
-Базовый класс для всех провайдеров. `fetch()` — вызывается из Data-потока по таймеру, `stop()` — сигнал остановки. Все провайдеры регистрируются в `DataManager`.
+### `IDataProvider` - абстрактный интерфейс
+Базовый класс для всех провайдеров. `fetch()` - вызывается из Data-потока по таймеру, `stop()` - сигнал остановки. Все провайдеры регистрируются в `DataManager`.
 
 ### `SystemInfoProvider` ✅
 Версии и статусы: OpenSSH, Docker, OpenSSL, rfkill, NetworkManager, dhclient, systemd, iptables/nftables. `popen()` с жёстким whitelist команд. Три состояния: Active / Inactive / NotInstalled. Обновление каждые 30 сек.
@@ -134,8 +134,8 @@ HTTPS через libcurl к `2ip.io`, `ipapi.co`. Запрос при старт
 
 ## Render Layer
 
-### `IRenderer` — абстрактный интерфейс
-`draw(sf::RenderWindow&)` — только из главного потока.
+### `IRenderer` - абстрактный интерфейс
+`draw(sf::RenderWindow&)` - только из главного потока.
 
 ### `DashboardRenderer`
 Компонует все пять блоков. Читает из `DataManager`.
@@ -150,24 +150,24 @@ HTTPS через libcurl к `2ip.io`, `ipapi.co`. Запрос при старт
 
 ## Shared Data
 
-### `ThreadSafeQueue<T>` — header-only
+### `ThreadSafeQueue<T>` - header-only
 `push()` из Data/API потоков, блокирующий `pop()`, `stop()` для завершения.
 
-### `DataManager` — header-only
+### `DataManager` - header-only
 Владеет провайдерами через `unique_ptr`. Render читает через методы провайдеров под их внутренним mutex.
 
 ---
 
 ## Utils
 
-### `RootCheck` — header-only
-`namespace RootCheck { inline bool isRoot() }` — первое в `main()`.
+### `RootCheck` - header-only
+`namespace RootCheck { inline bool isRoot() }` - первое в `main()`.
 
 ### `Logger`
-`Log::info/warn/error()` — stdout с меткой уровня.
+`Log::info/warn/error()` - stdout с меткой уровня.
 
 ### `NetworkUtils`
-`hexToIP()`, `hexToPort()` — парсинг `/proc/net/tcp` и `/proc/net/udp`.
+`hexToIP()`, `hexToPort()` - парсинг `/proc/net/tcp` и `/proc/net/udp`.
 
 ---
 
@@ -217,15 +217,15 @@ NetPulse/
 
 ## Блоки данных
 
-**Блок 1 — System Info ✅:** таблица имя | версия | статус. Цвета: зелёный/жёлтый/серый.
+**Блок 1 - System Info ✅:** таблица имя | версия | статус. Цвета: зелёный/жёлтый/серый.
 
-**Блок 2 — Request Log:** libpcap, скользящее окно 50–100 записей. GET=зелёный, POST=красный, PUT=жёлтый, DELETE=синий, PATCH=оранжевый, OPTIONS/HEAD=фиолетовый, UNKNOWN=серый.
+**Блок 2 - Request Log:** libpcap, скользящее окно 50–100 записей. GET=зелёный, POST=красный, PUT=жёлтый, DELETE=синий, PATCH=оранжевый, OPTIONS/HEAD=фиолетовый, UNKNOWN=серый.
 
-**Блок 3 — External IP:** libcurl → `2ip.io` / `ipapi.co`. IP, провайдер, город/страна.
+**Блок 3 - External IP:** libcurl → `2ip.io` / `ipapi.co`. IP, провайдер, город/страна.
 
-**Блок 4 — Network Devices:** `/proc/net/arp`. IP, MAC, интерфейс, статус.
+**Блок 4 - Network Devices:** `/proc/net/arp`. IP, MAC, интерфейс, статус.
 
-**Блок 5 — Connection Visualization:** граф, цвет по статусу, частицы, клик = детали.
+**Блок 5 - Connection Visualization:** граф, цвет по статусу, частицы, клик = детали.
 
 ---
 
@@ -237,7 +237,7 @@ NetPulse/
 - Thread 3 (API): libcurl запросы
 - Синхронизация: `ThreadSafeQueue` + внутренние mutex провайдеров
 
-**Root:** `RootCheck::isRoot()` — первое в `main()`.
+**Root:** `RootCheck::isRoot()` - первое в `main()`.
 
 **CI:** Ubuntu runner → Docker `archlinux:latest` → `pacman -Syu` → сборка clang+ninja → Release по тегу `v*`.
 
