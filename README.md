@@ -15,20 +15,8 @@ Visualizes active connections, network devices, HTTP traffic, system tool versio
 
 ## Preview
 
-> *Screenshot will be added once UI blocks are implemented (M3+)*
+![demo](.github/img/demo.png)
 
-```
-┌─────────────────────┬──────────────────────┐
-│  [ Block 1 ]        │  [ Block 4 ]         │
-│  System Info        │  Network Devices     │
-├─────────────────────│                      │
-│  [ Block 2 ]        ├──────────────────────│
-│  Request Log        │  [ Block 5 ]         │
-├─────────────────────│  Connection          │
-│  [ Block 3 ]        │  Visualizer          │
-│  External IP        │                      │
-└─────────────────────┴──────────────────────┘
-```
 
 ---
 
