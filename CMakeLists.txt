@@ -1,17 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 project(NetPulseMonitor VERSION 0.1.0 LANGUAGES CXX)
 
-# clang 
-set(CMAKE_C_COMPILER   clang)
-set(CMAKE_CXX_COMPILER clang++)
-
-# cxx ver
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wshadow)
-
 
 set(SOURCES
     src/main.cpp
@@ -45,7 +39,6 @@ target_include_directories(NetPulseMonitor PRIVATE
 )
 
 find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
-
 find_package(CURL REQUIRED)
 
 find_library(PCAP_LIBRARY NAMES pcap REQUIRED)

@@ -1,7 +1,6 @@
 #include "Utils/NetworkUtils.hpp"
-#include <cstdlib>
+#include <string>
 #include <arpa/inet.h>
-
 namespace NetUtils {
 
 std::string hexToIP(const std::string& hex)
