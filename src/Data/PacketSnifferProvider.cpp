@@ -1,14 +1,7 @@
 #include "Data/PacketSnifferProvider.hpp"
 
-PacketSnifferProvider::PacketSnifferProvider() {}
-PacketSnifferProvider::~PacketSnifferProvider() {}
+PacketSnifferProvider::PacketSnifferProvider() = default;
+PacketSnifferProvider::~PacketSnifferProvider() = default;
 
-void PacketSnifferProvider::fetch()
-{
-    // TODO
-}
-
-void PacketSnifferProvider::stop()
-{
-    // TODO
-}
+void PacketSnifferProvider::fetch() { /* TODO M7 */ }
+void PacketSnifferProvider::stop()  { /* TODO M7 */ }

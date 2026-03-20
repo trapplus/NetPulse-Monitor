@@ -1,28 +1,26 @@
 #include "Data/SystemInfoProvider.hpp"
 #include <array>
-#include <cstdio>
-#include <stdexcept>
+#include <cstdio>   // explicit - popen/fgets/pclose are C stdio, not guaranteed transitively
 
-// Whitelist команд — только строки из этого файла передаются в popen().
-// Никакого пользовательского ввода сюда не попадает.
+// command whitelist - nothing from user input ever touches popen()
 namespace {
 
 struct ToolDef {
     const char* name;
-    const char* versionCmd;   // команда для получения версии
-    const char* statusCmd;    // команда для проверки статуса (nullptr = не нужна)
+    const char* versionCmd;
+    const char* statusCmd;  // nullptr means we dont check service status
 };
 
 constexpr std::array<ToolDef, 8> TOOLS = {{
-    { "OpenSSH",        "ssh -V 2>&1 | head -1",                          nullptr },
-    { "Docker",         "docker --version 2>&1 | head -1",                nullptr },
-    { "OpenSSL",        "openssl version 2>&1 | head -1",                 nullptr },
-    { "rfkill",         "rfkill --version 2>&1 | head -1",                nullptr },
+    { "OpenSSH",        "ssh -V 2>&1 | head -1",                       nullptr },
+    { "Docker",         "docker --version 2>&1 | head -1",             nullptr },
+    { "OpenSSL",        "openssl version 2>&1 | head -1",              nullptr },
+    { "rfkill",         "rfkill --version 2>&1 | head -1",             nullptr },
     { "NetworkManager", "NetworkManager --version 2>&1 | head -1",
-                        "systemctl is-active NetworkManager 2>&1" },
-    { "dhclient",       "dhclient --version 2>&1 | head -1",              nullptr },
-    { "systemd",        "systemctl --version 2>&1 | head -1",             nullptr },
-    { "iptables",       "iptables --version 2>&1 | head -1",              nullptr },
+                        "systemctl is-active NetworkManager 2>&1"              },
+    { "dhclient",       "dhclient --version 2>&1 | head -1",           nullptr },
+    { "systemd",        "systemctl --version 2>&1 | head -1",          nullptr },
+    { "iptables",       "iptables --version 2>&1 | head -1",           nullptr },
 }};
 
 } // namespace
@@ -38,12 +36,13 @@ std::string SystemInfoProvider::runCommand(const char* cmd)
     FILE* pipe = ::popen(cmd, "r");
     if (!pipe) return {};
 
+    // grab first line only - we dont need the rest
     if (::fgets(buf.data(), static_cast<int>(buf.size()), pipe))
         result = buf.data();
 
     ::pclose(pipe);
 
-    // Убираем trailing newline
+    // strip trailing newline if present
     if (!result.empty() && result.back() == '\n')
         result.pop_back();
 
@@ -65,17 +64,16 @@ ToolInfo SystemInfoProvider::queryTool(const std::string& name,
         return info;
     }
 
-    // Обрезаем версию до разумной длины
+    // cap version string so it fits in the UI column
     if (ver.size() > 40) ver = ver.substr(0, 37) + "...";
     info.version = ver;
 
-    // Если есть команда проверки статуса — используем её
     if (statusCmd) {
         std::string s = runCommand(statusCmd);
         info.status = (s == "active") ? ToolInfo::Status::Active
                                        : ToolInfo::Status::Inactive;
     } else {
-        // Если утилита установлена но статус не проверяется — считаем активной
+        // no status command means tool is just installed, treat as active
         info.status = ToolInfo::Status::Active;
     }
 

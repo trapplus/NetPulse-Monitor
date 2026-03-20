@@ -1,14 +1,7 @@
 #include "Data/ExternalAPIProvider.hpp"
 
-ExternalAPIProvider::ExternalAPIProvider() {}
-ExternalAPIProvider::~ExternalAPIProvider() {}
+ExternalAPIProvider::ExternalAPIProvider() = default;
+ExternalAPIProvider::~ExternalAPIProvider() = default;
 
-void ExternalAPIProvider::fetch()
-{
-    // TODO
-}
-
-void ExternalAPIProvider::stop()
-{
-    // TODO
-}
+void ExternalAPIProvider::fetch() { /* TODO M6 */ }
+void ExternalAPIProvider::stop()  { /* TODO M6 */ }
