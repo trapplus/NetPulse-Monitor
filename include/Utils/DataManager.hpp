@@ -9,7 +9,7 @@ struct DataManager
 {
     std::mutex mtx;
 
-    // Заглушки — будут заменены конкретными типами
+    // Заглушки - будут заменены конкретными типами
     std::string externalIP;
     std::string isp;
     std::string location;

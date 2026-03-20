@@ -71,7 +71,7 @@ void ApplicationController::processEvents()
 
 void ApplicationController::update()
 {
-    // TODO M3+: синхронизация данных из DataManager → рендереры
+    // TODO M3+: синхронизация данных из DataManager -> рендереры
 }
 
 void ApplicationController::render()
