@@ -7,9 +7,9 @@
 ![C++](https://img.shields.io/badge/C%2B%2B-20-orange)
 
 A real-time network monitoring dashboard for Linux, built with SFML.  
-Visualizes active connections, network devices, HTTP traffic, system tool versions and external IP info — all in one graphical interface.
+Visualizes active connections, network devices, HTTP traffic, system tool versions and external IP info - all in one graphical interface.
 
-> ⚠️ Requires root privileges (`sudo`) — needed for packet capture via libpcap.
+> ⚠️ Requires root privileges (`sudo`) - needed for packet capture via libpcap.
 
 ---
 
@@ -37,9 +37,9 @@ Visualizes active connections, network devices, HTTP traffic, system tool versio
 | Block | Description |
 |---|---|
 | System Info | Versions and status of: OpenSSH, Docker, OpenSSL, NetworkManager, systemd, iptables and more |
-| Request Log | Live HTTP request capture via libpcap — method, path, source IP, timestamp |
+| Request Log | Live HTTP request capture via libpcap - method, path, source IP, timestamp |
 | External IP | Your public IP, ISP and location via HTTPS API |
-| Network Devices | All devices visible in ARP table — IP, MAC, interface |
+| Network Devices | All devices visible in ARP table - IP, MAC, interface |
 | Connection Visualizer | Animated graph of active TCP/UDP connections with status colors |
 
 ---
@@ -121,18 +121,18 @@ NetPulse-Monitor/
 
 | Milestone | Status |
 |---|---|
-| M1 — CMake + dependencies | ✅ |
-| M2 — Root check + SFML window | ✅ |
-| M3 — Block 1: System Info | ⬜ |
-| M4 — Block 4: Network Devices | ⬜ |
-| M5 — Block 5: Connection Visualizer | ⬜ |
-| M6 — Block 3: External IP | ⬜ |
-| M7 — Block 2: Packet Sniffer | ⬜ |
-| M8 — UI polish, animations | ⬜ |
-| M9 — Docs, demo | ⬜ |
+| M1 - CMake + dependencies | ✅ |
+| M2 - Root check + SFML window | ✅ |
+| M3 - Block 1: System Info | ⬜ |
+| M4 - Block 4: Network Devices | ⬜ |
+| M5 - Block 5: Connection Visualizer | ⬜ |
+| M6 - Block 3: External IP | ⬜ |
+| M7 - Block 2: Packet Sniffer | ⬜ |
+| M8 - UI polish, animations | ⬜ |
+| M9 - Docs, demo | ⬜ |
 
 ---
 
 ## Author
 
-**trapplus** — college systems programming project, 2026
+**trapplus** - college systems programming project, 2026
