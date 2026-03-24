@@ -29,26 +29,39 @@ constexpr std::array<ToolDef, 8> TOOLS = {{
 SystemInfoProvider::SystemInfoProvider() = default;
 SystemInfoProvider::~SystemInfoProvider() = default;
 
-std::string SystemInfoProvider::runCommand(const char* cmd)
+SystemInfoProvider::CommandResult SystemInfoProvider::runCommand(const char* cmd)
 {
     std::array<char, 256> buf{};
-    std::string result;
+    CommandResult result;
 
     FILE* pipe = ::popen(cmd, "r");
-    if (!pipe) return {};
+    if (!pipe) return result;
 
     // grab first line only — we dont need the rest
     if (::fgets(buf.data(), static_cast<int>(buf.size()), pipe))
-        result = buf.data();
+        result.output = buf.data();
 
     // pclose() returns exit status in waitpid format — WEXITSTATUS extracts the actual code
     // shell returns 127 if command not found, non-zero for other failures
     int raw = ::pclose(pipe);
-    if (WEXITSTATUS(raw) != 0) return {};
+    if (raw >= 0 && WIFEXITED(raw)) {
+        result.exitCode = WEXITSTATUS(raw);
+    }
 
-    // strip trailing newline if present
-    if (!result.empty() && result.back() == '\n')
-        result.pop_back();
+    // common shell-level signals that command exists in whitelist but missing on host
+    if (result.exitCode == 126 || result.exitCode == 127)
+        result.missingBinary = true;
+
+    // grab stderr hints that shell uses when binary can't be executed/found
+    if (result.output.find("command not found") != std::string::npos ||
+        result.output.find("not found") != std::string::npos ||
+        result.output.find("No such file or directory") != std::string::npos) {
+        result.missingBinary = true;
+    }
+
+    // strip trailing newline if present so comparisons stay exact
+    if (!result.output.empty() && result.output.back() == '\n')
+        result.output.pop_back();
 
     return result;
 }
@@ -60,7 +73,23 @@ ToolInfo SystemInfoProvider::queryTool(const std::string& name,
     ToolInfo info;
     info.name = name;
 
-    std::string ver = runCommand(versionCmd);
+    CommandResult verResult = runCommand(versionCmd);
+    std::string& ver = verResult.output;
+
+    // some shells hide the failing command exit behind a pipeline, but still print
+    // a clear "not found" style message in the captured first line
+    if (verResult.missingBinary) {
+        info.version = "not installed";
+        info.status  = ToolInfo::Status::NotInstalled;
+        return info;
+    }
+
+    if (verResult.exitCode != 0) {
+        info.version = "inactive";
+        info.status  = verResult.missingBinary ? ToolInfo::Status::NotInstalled
+                                               : ToolInfo::Status::Inactive;
+        return info;
+    }
 
     if (ver.empty()) {
         info.version = "not installed";
@@ -73,9 +102,22 @@ ToolInfo SystemInfoProvider::queryTool(const std::string& name,
     info.version = ver;
 
     if (statusCmd) {
-        std::string s = runCommand(statusCmd);
-        info.status = (s == "active") ? ToolInfo::Status::Active
-                                       : ToolInfo::Status::Inactive;
+        CommandResult statusResult = runCommand(statusCmd);
+
+        if (statusResult.missingBinary) {
+            info.status = ToolInfo::Status::NotInstalled;
+            return info;
+        }
+
+        if (statusResult.exitCode != 0) {
+            info.status = statusResult.missingBinary ? ToolInfo::Status::NotInstalled
+                                                     : ToolInfo::Status::Inactive;
+            return info;
+        }
+
+        // systemctl prints "active" for running services, anything else is not active
+        info.status = (statusResult.output == "active") ? ToolInfo::Status::Active
+                                                        : ToolInfo::Status::Inactive;
     } else {
         // no status command means tool is just installed, treat as active
         info.status = ToolInfo::Status::Active;

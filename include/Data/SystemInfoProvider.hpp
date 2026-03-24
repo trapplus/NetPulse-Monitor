@@ -28,9 +28,14 @@ public:
     std::vector<ToolInfo> getData() const;
 
 private:
-    // runs a shell command and returns the first line of output
-    // returns empty string if the command wasnt found or failed
-    static std::string runCommand(const char* cmd);
+    struct CommandResult {
+        std::string output;
+        int         exitCode { -1 };
+        bool        missingBinary { false };
+    };
+
+    // runs a shell command and captures first line + real process exit code
+    static CommandResult runCommand(const char* cmd);
 
     static ToolInfo queryTool(const std::string& name,
                               const char* versionCmd,
