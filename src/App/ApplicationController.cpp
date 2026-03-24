@@ -1,7 +1,9 @@
 #include "App/ApplicationController.hpp"
 #include "App/Config.hpp"
+#include "Data/ConnectionProvider.hpp" // explicit — DataManager.hpp only forward-declares it
 #include "Data/NetworkDeviceProvider.hpp" // explicit — DataManager.hpp only forward-declares it
 #include "Data/SystemInfoProvider.hpp"  // explicit — DataManager.hpp only forward-declares it
+#include "Render/ConnectionVisualizer.hpp"
 #include <array>
 #include <chrono>
 #include <string>
@@ -72,10 +74,12 @@ ApplicationController::ApplicationController()
 
     m_data.systemInfo = std::make_unique<SystemInfoProvider>();
     m_data.networkDevices = std::make_unique<NetworkDeviceProvider>();
+    m_data.connections = std::make_unique<ConnectionProvider>();
 
     // fetch once immediately so we dont show empty block on first frame
     m_data.systemInfo->fetch();
     m_data.networkDevices->fetch();
+    m_data.connections->fetch();
 
     startDataThread();
 }
@@ -97,6 +101,7 @@ void ApplicationController::startDataThread()
             // ARP table is dynamic, so this one follows the global data refresh interval
             if (m_networkDevicesClock.getElapsedTime().asSeconds() >= Config::DATA_REFRESH_SEC) {
                 m_data.networkDevices->fetch();
+                m_data.connections->fetch();
                 m_networkDevicesClock.restart();
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -109,6 +114,7 @@ void ApplicationController::stopDataThread()
     m_running = false;
     if (m_data.systemInfo) m_data.systemInfo->stop();
     if (m_data.networkDevices) m_data.networkDevices->stop();
+    if (m_data.connections) m_data.connections->stop();
     if (m_dataThread.joinable()) m_dataThread.join();
 }
 
@@ -143,6 +149,19 @@ void ApplicationController::render()
     renderPlaceholders();
     renderSystemInfo();
     renderNetworkDevices();
+
+    if (m_data.connections) {
+        const float W = static_cast<float>(m_window.getSize().x);
+        const float H = static_cast<float>(m_window.getSize().y);
+        auto blocks = makePlaceholders(W, H);
+        const auto& b = blocks[4];
+
+        static ConnectionVisualizer connectionVisualizer;
+        connectionVisualizer.setViewport({ { b.x + 8.f, b.y + 24.f }, { b.w - 16.f, b.h - 32.f } });
+        connectionVisualizer.setConnections(m_data.connections->getData());
+        connectionVisualizer.draw(m_window);
+    }
+
     m_window.display();
 }
 
