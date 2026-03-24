@@ -289,7 +289,7 @@ NetPulse/
 | M1 | CMake + SFML + libcurl + libpcap | ✅ |
 | M2 | Root-проверка + базовое окно SFML | ✅ |
 | M3 | Блок 1: System Info | ✅ |
-| M4 | Блок 4: Network Devices (ARP) | ⬜ |
+| M4 | Блок 4: Network Devices (ARP) | ✅ |
 | M5 | Блок 5: Connection Visualization | ⬜ |
 | M6 | Блок 3: External IP (libcurl) | ⬜ |
 | M7 | Блок 2: Packet Sniffer (libpcap) | ⬜ |
