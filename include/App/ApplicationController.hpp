@@ -28,6 +28,8 @@ private:
 
     // reads from systemInfo provider and draws the tool table in block 1
     void renderSystemInfo();
+    // reads from networkDevices provider and draws ARP rows in block 4
+    void renderNetworkDevices();
 
     sf::RenderWindow  m_window;
     sf::Font          m_font;
@@ -38,4 +40,5 @@ private:
     std::atomic<bool> m_running { true };
 
     sf::Clock         m_sysInfoClock;  // tracks when to re-fetch system info
+    sf::Clock         m_networkDevicesClock;  // tracks when to re-fetch ARP table
 };
