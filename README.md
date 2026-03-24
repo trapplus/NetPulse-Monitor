@@ -113,7 +113,7 @@ NetPulse-Monitor/
 | M2 - Root check + SFML window | ✅ |
 | M3 - Block 1: System Info | ✅ |
 | M4 - Block 4: Network Devices | ✅ |
-| M5 - Block 5: Connection Visualizer | ⬜ |
+| M5 - Block 5: Connection Visualizer | ✅ |
 | M6 - Block 3: External IP | ⬜ |
 | M7 - Block 2: Packet Sniffer | ⬜ |
 | M8 - UI polish, animations | ⬜ |
