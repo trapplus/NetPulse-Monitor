@@ -52,7 +52,31 @@
 
 # NetPulse Monitor - AI Context Document
 
-<!-- LLM Claude: добавлены правила по toolchain, includes и комментариям, уточнено правило includes:: -->
+<!-- LLM Claude: добавлены секции Dev environment tips, Testing instructions, PR instructions по образцу шаблона:: -->
+
+## Dev environment tips
+
+- Run `make build` to configure and compile in one step.
+- Run `make clean && make build` if CMake cache seems stale or you changed CMakeLists.txt.
+- Use `make run` to build and launch — it handles `xhost +local:` and `sudo -E` automatically.
+- Check `build/compile_commands.json` to confirm clangd is picking up the right flags — if it's missing, add `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` to the cmake call in Makefile.
+- To navigate the source tree quickly: headers live in `include/<Module>/`, implementations in `src/<Module>/` — same subdirectory structure mirrors each other.
+
+## Testing instructions
+
+- Find the CI pipeline in `.github/workflows/build.yml`.
+- The CI builds inside `archlinux:latest` Docker — if something passes locally but fails in CI, check that your dependency is listed in the `pacman -S` line in the workflow.
+- Before committing, do a clean build locally: `make clean && make build`.
+- Fix all compiler warnings before merging — the project runs with `-Wall -Wextra -Wpedantic -Wshadow` and warnings are treated as noise that hides real issues.
+- If you add a new source file, add it to `SOURCES` in `CMakeLists.txt` — otherwise it silently won't compile.
+
+## PR instructions
+
+- Tag format for releases: `v<major>.<minor>.<patch>` — pushing a tag triggers the CI release pipeline.
+- Always do `make clean && make build` before committing to catch any include or linker issues.
+- Do not commit the `build/` directory — it's in `.gitignore`.
+
+---
 
 ## Правила для AI-ассистентов
 
@@ -195,7 +219,7 @@ REQUEST_LOG_LIMIT   = 100
 NetPulse/
 ├── CMakeLists.txt
 ├── Makefile
-├── llms.md
+├── AGENTS.md
 ├── README.md
 ├── .gitignore
 ├── .github/workflows/build.yml
