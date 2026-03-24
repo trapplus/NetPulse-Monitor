@@ -78,6 +78,15 @@
 
 ---
 
+## Do not
+
+- Do not delete existing comments unless explicitly told to
+- Do not touch files unrelated to the assigned task — only modify code responsible for what you were asked to implement
+- Exception: you may add  values to  to avoid scattering magic numbers across files
+- Do not modify architecture — class structure, file layout, and module boundaries are frozen until the owner says otherwise
+- Be technical and precise — the owner is exact in their wording, take it literally
+- If a prompt is ambiguous or imprecise, do not guess and do not proceed — ignore it and ask the owner to rephrase
+
 ## Правила для AI-ассистентов
 
 ### Toolchain
