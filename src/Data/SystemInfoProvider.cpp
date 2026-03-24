@@ -1,8 +1,9 @@
 #include "Data/SystemInfoProvider.hpp"
 #include <array>
-#include <cstdio>   // explicit - popen/fgets/pclose are C stdio, not guaranteed transitively
+#include <cstdio>    // explicit — popen/fgets/pclose are C stdio, not guaranteed transitively
+#include <sys/wait.h> // explicit — WEXITSTATUS is POSIX, never comes transitively
 
-// command whitelist - nothing from user input ever touches popen()
+// command whitelist — nothing from user input ever touches popen()
 namespace {
 
 struct ToolDef {
@@ -36,11 +37,14 @@ std::string SystemInfoProvider::runCommand(const char* cmd)
     FILE* pipe = ::popen(cmd, "r");
     if (!pipe) return {};
 
-    // grab first line only - we dont need the rest
+    // grab first line only — we dont need the rest
     if (::fgets(buf.data(), static_cast<int>(buf.size()), pipe))
         result = buf.data();
 
-    ::pclose(pipe);
+    // pclose() returns exit status in waitpid format — WEXITSTATUS extracts the actual code
+    // shell returns 127 if command not found, non-zero for other failures
+    int raw = ::pclose(pipe);
+    if (WEXITSTATUS(raw) != 0) return {};
 
     // strip trailing newline if present
     if (!result.empty() && result.back() == '\n')
