@@ -3,9 +3,10 @@
 #include <string>
 
 // forward declaration - we only store a pointer here, full type not needed in this header
-// ApplicationController.cpp includes SystemInfoProvider.hpp directly where methods are called
+// ApplicationController.cpp includes provider headers directly where methods are called
 class SystemInfoProvider;
 class NetworkDeviceProvider;
+class ConnectionProvider;
 
 // central place that owns all data providers
 // ApplicationController creates and stores this, render methods read from it
@@ -14,6 +15,7 @@ struct DataManager
 {
     std::unique_ptr<SystemInfoProvider> systemInfo;
     std::unique_ptr<NetworkDeviceProvider> networkDevices;
+    std::unique_ptr<ConnectionProvider> connections;
 
     // placeholders for providers not yet implemented
     std::string externalIP;
