@@ -1,7 +1,9 @@
 #include "App/ApplicationController.hpp"
 #include "App/Config.hpp"
+#include "Data/ConnectionProvider.hpp" // explicit — DataManager.hpp only forward-declares it
 #include "Data/NetworkDeviceProvider.hpp" // explicit — DataManager.hpp only forward-declares it
 #include "Data/SystemInfoProvider.hpp"  // explicit — DataManager.hpp only forward-declares it
+#include "Render/ConnectionVisualizer.hpp"
 #include <array>
 #include <chrono>
 #include <string>
@@ -52,6 +54,18 @@ static const char* statusLabel(ToolInfo::Status s)
     return "";
 }
 
+static sf::Color blockLabelColor(std::size_t index)
+{
+    switch (index) {
+        case 0: return { 100, 180, 100 };
+        case 1: return { 130, 165, 230 };
+        case 2: return { 215, 175, 105 };
+        case 3: return { 170, 135, 215 };
+        case 4: return { 105, 195, 195 };
+    }
+    return { 120, 120, 125 };
+}
+
 ApplicationController::ApplicationController()
     : m_window(
         sf::VideoMode({ Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT }),
@@ -72,10 +86,12 @@ ApplicationController::ApplicationController()
 
     m_data.systemInfo = std::make_unique<SystemInfoProvider>();
     m_data.networkDevices = std::make_unique<NetworkDeviceProvider>();
+    m_data.connections = std::make_unique<ConnectionProvider>();
 
     // fetch once immediately so we dont show empty block on first frame
     m_data.systemInfo->fetch();
     m_data.networkDevices->fetch();
+    m_data.connections->fetch();
 
     startDataThread();
 }
@@ -97,6 +113,7 @@ void ApplicationController::startDataThread()
             // ARP table is dynamic, so this one follows the global data refresh interval
             if (m_networkDevicesClock.getElapsedTime().asSeconds() >= Config::DATA_REFRESH_SEC) {
                 m_data.networkDevices->fetch();
+                m_data.connections->fetch();
                 m_networkDevicesClock.restart();
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -109,6 +126,7 @@ void ApplicationController::stopDataThread()
     m_running = false;
     if (m_data.systemInfo) m_data.systemInfo->stop();
     if (m_data.networkDevices) m_data.networkDevices->stop();
+    if (m_data.connections) m_data.connections->stop();
     if (m_dataThread.joinable()) m_dataThread.join();
 }
 
@@ -143,6 +161,46 @@ void ApplicationController::render()
     renderPlaceholders();
     renderSystemInfo();
     renderNetworkDevices();
+
+    if (m_data.connections) {
+        const float W = static_cast<float>(m_window.getSize().x);
+        const float H = static_cast<float>(m_window.getSize().y);
+        auto blocks = makePlaceholders(W, H);
+        const auto& b = blocks[4];
+        const auto connections = m_data.connections->getData();
+
+        static ConnectionVisualizer connectionVisualizer;
+        connectionVisualizer.setViewport({ { b.x + 8.f, b.y + 48.f }, { b.w - 16.f, b.h - 56.f } });
+        connectionVisualizer.setConnections(connections);
+        connectionVisualizer.setFont(m_fontLoaded ? &m_font : nullptr);
+        connectionVisualizer.draw(m_window);
+
+        if (m_fontLoaded) {
+            int tcpCount = 0;
+            int udpCount = 0;
+            for (const auto& conn : connections) {
+                if (conn.protocol == ConnectionInfo::Protocol::TCP) ++tcpCount;
+                if (conn.protocol == ConnectionInfo::Protocol::UDP) ++udpCount;
+            }
+
+            // keep counters in the same panel so you can quickly read totals before looking at the graph
+            sf::Text tcpText(m_font, "TCP: " + std::to_string(tcpCount), 11);
+            tcpText.setFillColor({ 110, 210, 120 });
+            tcpText.setPosition({ b.x + 12.f, b.y + 28.f });
+            m_window.draw(tcpText);
+
+            sf::Text udpText(m_font, "UDP: " + std::to_string(udpCount), 11);
+            udpText.setFillColor({ 110, 170, 235 });
+            udpText.setPosition({ b.x + 100.f, b.y + 28.f });
+            m_window.draw(udpText);
+
+            sf::Text totalText(m_font, "TOTAL: " + std::to_string(tcpCount + udpCount), 11);
+            totalText.setFillColor({ 225, 190, 105 });
+            totalText.setPosition({ b.x + 190.f, b.y + 28.f });
+            m_window.draw(totalText);
+        }
+    }
+
     m_window.display();
 }
 
@@ -152,7 +210,6 @@ void ApplicationController::renderPlaceholders()
     const float H = static_cast<float>(m_window.getSize().y);
 
     const sf::Color borderColor { 55, 55, 60 };
-    const sf::Color labelColor  { 80, 80, 85 };
     const sf::Color waitColor   { 60, 60, 65 };
 
     auto blocks = makePlaceholders(W, H);
@@ -171,13 +228,15 @@ void ApplicationController::renderPlaceholders()
 
         // block 1 gets a slightly brighter label since it has live data
         sf::Text lbl(m_font, b.label, 13);
-        lbl.setFillColor(i == 0 ? sf::Color(100, 180, 100) : labelColor);
+        lbl.setFillColor(blockLabelColor(i));
         lbl.setPosition({ b.x + 10.f, b.y + 8.f });
         m_window.draw(lbl);
 
         if (i > 0) {
-            // once block 4 has rows we stop drawing the placeholder text there
+            // once blocks with live data are filled we hide the waiting placeholder there
             if (i == 3 && m_data.networkDevices && !m_data.networkDevices->getData().empty())
+                continue;
+            if (i == 4 && m_data.connections && !m_data.connections->getData().empty())
                 continue;
 
             sf::Text wait(m_font, "waiting for data...", 11);
