@@ -13,7 +13,7 @@ struct BlockPlaceholder {
     float x, y, w, h;
 };
 
-// recomputed every frame so blocks stretch correctly on window resize
+// recomputed every frame, but the window itself now stays on a fixed canvas
 static std::array<BlockPlaceholder, 5> makePlaceholders(float W, float H)
 {
     const float pad  = 12.f;
@@ -55,7 +55,8 @@ static const char* statusLabel(ToolInfo::Status s)
 ApplicationController::ApplicationController()
     : m_window(
         sf::VideoMode({ Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT }),
-        Config::WINDOW_TITLE
+        Config::WINDOW_TITLE,
+        sf::Style::Close
     )
 {
     m_window.setFramerateLimit(Config::TARGET_FPS);
