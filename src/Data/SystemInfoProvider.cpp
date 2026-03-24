@@ -76,6 +76,14 @@ ToolInfo SystemInfoProvider::queryTool(const std::string& name,
     CommandResult verResult = runCommand(versionCmd);
     std::string& ver = verResult.output;
 
+    // some shells hide the failing command exit behind a pipeline, but still print
+    // a clear "not found" style message in the captured first line
+    if (verResult.missingBinary) {
+        info.version = "not installed";
+        info.status  = ToolInfo::Status::NotInstalled;
+        return info;
+    }
+
     if (verResult.exitCode != 0) {
         info.version = "inactive";
         info.status  = verResult.missingBinary ? ToolInfo::Status::NotInstalled
@@ -95,6 +103,11 @@ ToolInfo SystemInfoProvider::queryTool(const std::string& name,
 
     if (statusCmd) {
         CommandResult statusResult = runCommand(statusCmd);
+
+        if (statusResult.missingBinary) {
+            info.status = ToolInfo::Status::NotInstalled;
+            return info;
+        }
 
         if (statusResult.exitCode != 0) {
             info.status = statusResult.missingBinary ? ToolInfo::Status::NotInstalled
