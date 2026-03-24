@@ -1,7 +1,10 @@
 #pragma once
-#include "Data/SystemInfoProvider.hpp"
 #include <memory>
 #include <string>
+
+// forward declaration - we only store a pointer here, full type not needed in this header
+// ApplicationController.cpp includes SystemInfoProvider.hpp directly where methods are called
+class SystemInfoProvider;
 
 // central place that owns all data providers
 // ApplicationController creates and stores this, render methods read from it

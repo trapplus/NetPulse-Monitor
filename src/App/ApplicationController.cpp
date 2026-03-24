@@ -1,11 +1,12 @@
 #include "App/ApplicationController.hpp"
 #include "App/Config.hpp"
+#include "Data/SystemInfoProvider.hpp"  // explicit — DataManager.hpp only forward-declares it
 #include <array>
 #include <chrono>
 #include <string>
 #include <thread>
 
-// placeholder block layout - gets replaced as real renderers are implemented
+// placeholder block layout — gets replaced as real renderers are implemented
 struct BlockPlaceholder {
     std::string label;
     float x, y, w, h;
