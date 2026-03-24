@@ -1,5 +1,6 @@
 #include "App/ApplicationController.hpp"
 #include "App/Config.hpp"
+#include "Data/NetworkDeviceProvider.hpp" // explicit — DataManager.hpp only forward-declares it
 #include "Data/SystemInfoProvider.hpp"  // explicit — DataManager.hpp only forward-declares it
 #include <array>
 #include <chrono>
@@ -12,7 +13,7 @@ struct BlockPlaceholder {
     float x, y, w, h;
 };
 
-// recomputed every frame so blocks stretch correctly on window resize
+// recomputed every frame, but the window itself now stays on a fixed canvas
 static std::array<BlockPlaceholder, 5> makePlaceholders(float W, float H)
 {
     const float pad  = 12.f;
@@ -54,7 +55,8 @@ static const char* statusLabel(ToolInfo::Status s)
 ApplicationController::ApplicationController()
     : m_window(
         sf::VideoMode({ Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT }),
-        Config::WINDOW_TITLE
+        Config::WINDOW_TITLE,
+        sf::Style::Close
     )
 {
     m_window.setFramerateLimit(Config::TARGET_FPS);
@@ -69,9 +71,11 @@ ApplicationController::ApplicationController()
     }
 
     m_data.systemInfo = std::make_unique<SystemInfoProvider>();
+    m_data.networkDevices = std::make_unique<NetworkDeviceProvider>();
 
     // fetch once immediately so we dont show empty block on first frame
     m_data.systemInfo->fetch();
+    m_data.networkDevices->fetch();
 
     startDataThread();
 }
@@ -90,6 +94,11 @@ void ApplicationController::startDataThread()
                 m_data.systemInfo->fetch();
                 m_sysInfoClock.restart();
             }
+            // ARP table is dynamic, so this one follows the global data refresh interval
+            if (m_networkDevicesClock.getElapsedTime().asSeconds() >= Config::DATA_REFRESH_SEC) {
+                m_data.networkDevices->fetch();
+                m_networkDevicesClock.restart();
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
     });
@@ -99,6 +108,7 @@ void ApplicationController::stopDataThread()
 {
     m_running = false;
     if (m_data.systemInfo) m_data.systemInfo->stop();
+    if (m_data.networkDevices) m_data.networkDevices->stop();
     if (m_dataThread.joinable()) m_dataThread.join();
 }
 
@@ -132,6 +142,7 @@ void ApplicationController::render()
     m_window.clear(sf::Color(Config::BG_R, Config::BG_G, Config::BG_B));
     renderPlaceholders();
     renderSystemInfo();
+    renderNetworkDevices();
     m_window.display();
 }
 
@@ -165,6 +176,10 @@ void ApplicationController::renderPlaceholders()
         m_window.draw(lbl);
 
         if (i > 0) {
+            // once block 4 has rows we stop drawing the placeholder text there
+            if (i == 3 && m_data.networkDevices && !m_data.networkDevices->getData().empty())
+                continue;
+
             sf::Text wait(m_font, "waiting for data...", 11);
             wait.setFillColor(waitColor);
             wait.setPosition({ b.x + 10.f, b.y + 30.f });
@@ -209,5 +224,50 @@ void ApplicationController::renderSystemInfo()
         stat.setFillColor(statusColor(t.status));
         stat.setPosition({ b.x + b.w - 110.f, y });
         m_window.draw(stat);
+    }
+}
+
+void ApplicationController::renderNetworkDevices()
+{
+    if (!m_fontLoaded || !m_data.networkDevices) return;
+
+    const float W = static_cast<float>(m_window.getSize().x);
+    const float H = static_cast<float>(m_window.getSize().y);
+    auto blocks = makePlaceholders(W, H);
+    const auto& b = blocks[3];
+
+    auto devices = m_data.networkDevices->getData();
+    if (devices.empty()) return;
+
+    const float startY  = b.y + 30.f;
+    const float lineH   = 16.f;
+    const float marginX = b.x + 14.f;
+
+    for (size_t i = 0; i < devices.size(); ++i) {
+        float y = startY + static_cast<float>(i) * lineH;
+        if (y + lineH > b.y + b.h) break;  // keep rows inside block border
+
+        auto& d = devices[i];
+
+        sf::Text ip(m_font, d.ip, 11);
+        ip.setFillColor({ 200, 200, 200 });
+        ip.setPosition({ marginX, y });
+        m_window.draw(ip);
+
+        sf::Text mac(m_font, d.mac, 11);
+        mac.setFillColor({ 160, 160, 160 });
+        mac.setPosition({ marginX + 135.f, y });
+        m_window.draw(mac);
+
+        sf::Text iface(m_font, d.iface, 11);
+        iface.setFillColor({ 120, 160, 220 });
+        iface.setPosition({ marginX + 290.f, y });
+        m_window.draw(iface);
+
+        const bool complete = (d.status == "Complete");
+        sf::Text status(m_font, d.status, 11);
+        status.setFillColor(complete ? sf::Color(120, 200, 120) : sf::Color(200, 160, 60));
+        status.setPosition({ b.x + b.w - 95.f, y });
+        m_window.draw(status);
     }
 }
