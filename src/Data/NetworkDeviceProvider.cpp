@@ -12,7 +12,7 @@ void NetworkDeviceProvider::fetch()
     std::ifstream arp("/proc/net/arp");
     if (!arp.is_open()) return;
 
-    std::vector<DeviceInfo> fresh;
+    std::vector<NetworkDeviceInfo> fresh;
     std::string line;
 
     // first line is just column labels, so we skip it before parsing real rows
@@ -38,7 +38,7 @@ void NetworkDeviceProvider::fetch()
         flagsStream >> std::hex >> flags;
         if (flagsStream.fail()) continue;
 
-        DeviceInfo device;
+        NetworkDeviceInfo device;
         device.ip = std::move(ip);
         device.mac = std::move(mac);
         device.iface = std::move(iface);
@@ -54,4 +54,10 @@ void NetworkDeviceProvider::fetch()
 void NetworkDeviceProvider::stop()
 {
     m_stopped = true;
+}
+
+std::vector<NetworkDeviceInfo> NetworkDeviceProvider::getData() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_data;
 }
