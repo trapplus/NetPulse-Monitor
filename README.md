@@ -1,6 +1,6 @@
 # NetPulse Monitor
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
