@@ -18,6 +18,17 @@ struct ParsedExternalInfo {
     std::string country;
 };
 
+struct CurlGlobalState {
+    CurlGlobalState() { curl_global_init(CURL_GLOBAL_DEFAULT); }
+    ~CurlGlobalState() { curl_global_cleanup(); }
+};
+
+void ensureCurlGlobalInit()
+{
+    static const CurlGlobalState state;
+    (void)state;
+}
+
 size_t writeCallback(char* ptr, size_t size, size_t nmemb, void* userdata)
 {
     if (!userdata || !ptr) return 0;
@@ -83,6 +94,8 @@ bool parseExternalInfo(const std::string& body, ParsedExternalInfo& out)
 
 bool performGetRequest(const char* url, std::string& responseBody)
 {
+    ensureCurlGlobalInit();
+
     CURL* curl = curl_easy_init();
     if (!curl) return false;
 
@@ -92,6 +105,8 @@ bool performGetRequest(const char* url, std::string& responseBody)
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, kUserAgent);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(Config::API_CONNECT_TIMEOUT.count()));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, static_cast<long>(Config::API_REQUEST_TIMEOUT.count()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
 
@@ -120,8 +135,8 @@ void ExternalAPIProvider::fetch()
         // no need to hammer public APIs every tick - cached data is fine until refresh window expires
         if (m_hasSuccessfulFetch) {
             const auto now = std::chrono::steady_clock::now();
-            const auto elapsed = std::chrono::duration_cast<std::chrono::duration<float>>(now - m_lastSuccessfulFetch);
-            if (elapsed.count() < Config::API_REFRESH_SEC)
+            const auto elapsed = now - m_lastSuccessfulFetch;
+            if (elapsed < Config::API_REFRESH_INTERVAL)
                 return;
         }
     }
@@ -166,32 +181,14 @@ void ExternalAPIProvider::stop()
     m_stopped = true;
 }
 
-std::string ExternalAPIProvider::getIP() const
+ExternalAPIProvider::Snapshot ExternalAPIProvider::getData() const
 {
     std::lock_guard lock(m_mutex);
-    return m_ip;
-}
-
-std::string ExternalAPIProvider::getProvider() const
-{
-    std::lock_guard lock(m_mutex);
-    return m_provider;
-}
-
-std::string ExternalAPIProvider::getCity() const
-{
-    std::lock_guard lock(m_mutex);
-    return m_city;
-}
-
-std::string ExternalAPIProvider::getCountry() const
-{
-    std::lock_guard lock(m_mutex);
-    return m_country;
-}
-
-bool ExternalAPIProvider::isDataFresh() const
-{
-    std::lock_guard lock(m_mutex);
-    return m_dataFresh;
+    return {
+        .ip = m_ip,
+        .provider = m_provider,
+        .city = m_city,
+        .country = m_country,
+        .isFresh = m_dataFresh
+    };
 }
