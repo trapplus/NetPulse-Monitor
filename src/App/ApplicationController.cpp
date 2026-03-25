@@ -2,6 +2,7 @@
 #include "App/Config.hpp"
 #include "Data/ConnectionProvider.hpp" // explicit — DataManager.hpp only forward-declares it
 #include "Data/NetworkDeviceProvider.hpp" // explicit — DataManager.hpp only forward-declares it
+#include "Data/ExternalAPIProvider.hpp" // explicit — DataManager.hpp only forward-declares it
 #include "Data/SystemInfoProvider.hpp"  // explicit — DataManager.hpp only forward-declares it
 #include "Render/ConnectionVisualizer.hpp"
 #include <array>
@@ -87,11 +88,13 @@ ApplicationController::ApplicationController()
     m_data.systemInfo = std::make_unique<SystemInfoProvider>();
     m_data.networkDevices = std::make_unique<NetworkDeviceProvider>();
     m_data.connections = std::make_unique<ConnectionProvider>();
+    m_data.externalAPI = std::make_unique<ExternalAPIProvider>();
 
     // fetch once immediately so we dont show empty block on first frame
     m_data.systemInfo->fetch();
     m_data.networkDevices->fetch();
     m_data.connections->fetch();
+    m_data.externalAPI->fetch();
 
     startDataThread();
 }
@@ -114,6 +117,7 @@ void ApplicationController::startDataThread()
             if (m_networkDevicesClock.getElapsedTime().asSeconds() >= Config::DATA_REFRESH_SEC) {
                 m_data.networkDevices->fetch();
                 m_data.connections->fetch();
+                m_data.externalAPI->fetch();
                 m_networkDevicesClock.restart();
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -127,6 +131,7 @@ void ApplicationController::stopDataThread()
     if (m_data.systemInfo) m_data.systemInfo->stop();
     if (m_data.networkDevices) m_data.networkDevices->stop();
     if (m_data.connections) m_data.connections->stop();
+    if (m_data.externalAPI) m_data.externalAPI->stop();
     if (m_dataThread.joinable()) m_dataThread.join();
 }
 
@@ -161,6 +166,7 @@ void ApplicationController::render()
     renderPlaceholders();
     renderSystemInfo();
     renderNetworkDevices();
+    renderExternalAPI();
 
     if (m_data.connections) {
         const float W = static_cast<float>(m_window.getSize().x);
@@ -234,6 +240,8 @@ void ApplicationController::renderPlaceholders()
 
         if (i > 0) {
             // once blocks with live data are filled we hide the waiting placeholder there
+            if (i == 2 && m_data.externalAPI && m_data.externalAPI->isDataFresh())
+                continue;
             if (i == 3 && m_data.networkDevices && !m_data.networkDevices->getData().empty())
                 continue;
             if (i == 4 && m_data.connections && !m_data.connections->getData().empty())
@@ -329,4 +337,42 @@ void ApplicationController::renderNetworkDevices()
         status.setPosition({ b.x + b.w - 95.f, y });
         m_window.draw(status);
     }
+}
+
+
+void ApplicationController::renderExternalAPI()
+{
+    if (!m_fontLoaded || !m_data.externalAPI) return;
+
+    const float W = static_cast<float>(m_window.getSize().x);
+    const float H = static_cast<float>(m_window.getSize().y);
+    auto blocks = makePlaceholders(W, H);
+    const auto& b = blocks[2];
+
+    if (!m_data.externalAPI->isDataFresh())
+        return;
+
+    const float startY  = b.y + 32.f;
+    const float lineH   = 16.f;
+    const float marginX = b.x + 14.f;
+
+    sf::Text ipLabel(m_font, "IP: " + m_data.externalAPI->getIP(), 11);
+    ipLabel.setFillColor({ 205, 205, 205 });
+    ipLabel.setPosition({ marginX, startY });
+    m_window.draw(ipLabel);
+
+    sf::Text ispLabel(m_font, "Provider: " + m_data.externalAPI->getProvider(), 11);
+    ispLabel.setFillColor({ 170, 170, 170 });
+    ispLabel.setPosition({ marginX, startY + lineH });
+    m_window.draw(ispLabel);
+
+    sf::Text cityLabel(m_font, "City: " + m_data.externalAPI->getCity(), 11);
+    cityLabel.setFillColor({ 130, 170, 230 });
+    cityLabel.setPosition({ marginX, startY + lineH * 2.f });
+    m_window.draw(cityLabel);
+
+    sf::Text countryLabel(m_font, "Country: " + m_data.externalAPI->getCountry(), 11);
+    countryLabel.setFillColor({ 120, 200, 120 });
+    countryLabel.setPosition({ marginX, startY + lineH * 3.f });
+    m_window.draw(countryLabel);
 }

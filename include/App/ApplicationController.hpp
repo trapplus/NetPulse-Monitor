@@ -30,6 +30,8 @@ private:
     void renderSystemInfo();
     // reads from networkDevices provider and draws ARP rows in block 4
     void renderNetworkDevices();
+    // reads from externalAPI provider and draws external IP/ISP/location in block 3
+    void renderExternalAPI();
 
     sf::RenderWindow  m_window;
     sf::Font          m_font;
