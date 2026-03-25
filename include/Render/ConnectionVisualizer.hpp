@@ -1,5 +1,5 @@
 #pragma once
-#include "Data/ConnectionProvider.hpp"
+#include "Data/ConnectionInfo.hpp"
 #include "Render/IRenderer.hpp"
 #include <SFML/Graphics/Font.hpp>
 #include <string>
