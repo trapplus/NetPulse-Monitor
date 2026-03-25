@@ -1,30 +1,9 @@
 #pragma once
+#include "Data/ConnectionInfo.hpp"
 #include "Data/IDataProvider.hpp"
 #include <atomic>
 #include <mutex>
-#include <string>
 #include <vector>
-
-struct ConnectionInfo {
-    enum class Protocol {
-        TCP,
-        UDP
-    };
-
-    enum class Status {
-        ESTABLISHED,
-        LISTEN,
-        TIME_WAIT,
-        OTHER
-    };
-
-    std::string localIP;
-    int         localPort { 0 };
-    std::string remoteIP;
-    int         remotePort { 0 };
-    Protocol    protocol { Protocol::TCP };
-    Status      status { Status::OTHER };
-};
 
 class ConnectionProvider : public IDataProvider
 {
