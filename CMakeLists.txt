@@ -22,7 +22,6 @@ set(SOURCES
     src/Render/UI/Button.cpp
     src/Utils/Logger.cpp
     src/Utils/NetworkUtils.cpp
-    src/Utils/RootCheck.cpp
 )
 
 add_executable(NetPulseMonitor ${SOURCES})

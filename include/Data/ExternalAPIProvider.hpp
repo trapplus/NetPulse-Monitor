@@ -8,17 +8,21 @@
 class ExternalAPIProvider : public IDataProvider
 {
 public:
+    struct Snapshot {
+        std::string ip;
+        std::string provider;
+        std::string city;
+        std::string country;
+        bool        isFresh { false };
+    };
+
     ExternalAPIProvider();
     ~ExternalAPIProvider() override;
 
     void fetch() override;
     void stop() override;
 
-    std::string getIP() const;
-    std::string getProvider() const;
-    std::string getCity() const;
-    std::string getCountry() const;
-    bool isDataFresh() const;
+    Snapshot getData() const;
 
 private:
     mutable std::mutex                    m_mutex;

@@ -16,8 +16,8 @@ public:
     void run();
 
 private:
-    void startDataThread();
-    void stopDataThread();   // sets m_running=false and joins
+    void startWorkers();
+    void stopWorkers();
 
     void processEvents();
     void update();
@@ -32,6 +32,8 @@ private:
     void renderNetworkDevices();
     // reads from externalAPI provider and draws external IP/ISP/location in block 3
     void renderExternalAPI();
+    // draws the connection graph and protocol counters in block 5
+    void renderConnections();
 
     sf::RenderWindow  m_window;
     sf::Font          m_font;
@@ -39,8 +41,6 @@ private:
 
     DataManager       m_data;
     std::thread       m_dataThread;
+    std::thread       m_apiThread;
     std::atomic<bool> m_running { true };
-
-    sf::Clock         m_sysInfoClock;  // tracks when to re-fetch system info
-    sf::Clock         m_networkDevicesClock;  // tracks when to re-fetch ARP table
 };

@@ -1,6 +1,5 @@
 #pragma once
 #include <memory>
-#include <string>
 
 // forward declaration - we only store a pointer here, full type not needed in this header
 // ApplicationController.cpp includes provider headers directly where methods are called

@@ -1,4 +1,5 @@
 #include "Render/ConnectionVisualizer.hpp"
+#include "App/Config.hpp"
 #include <SFML/Graphics/Color.hpp>
 #include <SFML/Graphics/CircleShape.hpp>
 #include <SFML/Graphics/Font.hpp>
@@ -32,12 +33,12 @@ void ConnectionVisualizer::setFont(const sf::Font* font)
 sf::Color ConnectionVisualizer::statusColor(ConnectionInfo::Status status)
 {
     switch (status) {
-        case ConnectionInfo::Status::ESTABLISHED: return { 120, 200, 120 };
-        case ConnectionInfo::Status::LISTEN: return { 200, 180, 80 };
-        case ConnectionInfo::Status::TIME_WAIT: return { 120, 120, 120 };
-        case ConnectionInfo::Status::OTHER: return { 120, 120, 120 };
+        case ConnectionInfo::Status::ESTABLISHED: return Config::STATUS_ACTIVE_COLOR;
+        case ConnectionInfo::Status::LISTEN: return Config::STATUS_LISTEN_COLOR;
+        case ConnectionInfo::Status::TIME_WAIT: return Config::STATUS_NOT_INSTALLED_COLOR;
+        case ConnectionInfo::Status::OTHER: return Config::STATUS_NOT_INSTALLED_COLOR;
     }
-    return { 120, 120, 120 };
+    return Config::STATUS_NOT_INSTALLED_COLOR;
 }
 
 const char* ConnectionVisualizer::statusLabel(ConnectionInfo::Status status)
@@ -53,14 +54,7 @@ const char* ConnectionVisualizer::statusLabel(ConnectionInfo::Status status)
 
 sf::Color ConnectionVisualizer::headerColorForIndex(std::size_t index)
 {
-    static constexpr sf::Color colors[] = {
-        { 90, 180, 110 },   // green-ish
-        { 90, 145, 220 },   // blue-ish
-        { 220, 165, 90 },   // orange-ish
-        { 165, 110, 210 },  // purple-ish
-        { 95, 195, 195 }    // cyan-ish
-    };
-    return colors[index % (sizeof(colors) / sizeof(colors[0]))];
+    return Config::CONNECTION_NODE_COLORS[index % Config::CONNECTION_NODE_COLORS.size()];
 }
 
 std::vector<ConnectionVisualizer::PeerSummary>
@@ -104,20 +98,20 @@ void ConnectionVisualizer::draw(sf::RenderWindow& window)
         return;
 
     const sf::Vector2f center {
-        m_viewport.position.x + m_viewport.size.x * 0.5f,
-        m_viewport.position.y + m_viewport.size.y * 0.5f
+        m_viewport.position.x + m_viewport.size.x * Config::CONNECTION_CENTER_RATIO,
+        m_viewport.position.y + m_viewport.size.y * Config::CONNECTION_CENTER_RATIO
     };
 
     auto peers = buildPeerSummaries(m_connections);
     if (peers.empty()) return;
 
     // limiting visible peers keeps the graph readable instead of turning into a solid ring
-    constexpr std::size_t MAX_VISIBLE_PEERS = 22;
-    if (peers.size() > MAX_VISIBLE_PEERS)
-        peers.resize(MAX_VISIBLE_PEERS);
+    if (peers.size() > Config::MAX_CONNECTION_VISUALIZER_PEERS)
+        peers.resize(Config::MAX_CONNECTION_VISUALIZER_PEERS);
 
     const float minDim = std::min(m_viewport.size.x, m_viewport.size.y);
-    const float remoteRadius = std::max(30.f, minDim * 0.35f);
+    const float remoteRadius = std::max(Config::CONNECTION_MIN_REMOTE_RING_RADIUS,
+                                        minDim * Config::CONNECTION_REMOTE_RING_RATIO);
 
     const std::size_t count = peers.size();
     struct PeerDrawData {
@@ -139,11 +133,17 @@ void ConnectionVisualizer::draw(sf::RenderWindow& window)
 
         sf::Vector2f delta { remote.x - center.x, remote.y - center.y };
         const float length = std::sqrt(delta.x * delta.x + delta.y * delta.y);
-        if (length <= 0.01f) continue;
+        if (length <= Config::CONNECTION_MIN_EDGE_LENGTH) continue;
 
-        const float rotation = std::atan2(delta.y, delta.x) * 180.f / std::numbers::pi_v<float>;
+        const float rotation = std::atan2(delta.y, delta.x)
+                             * Config::CONNECTION_DEGREES_PER_RADIAN
+                             / std::numbers::pi_v<float>;
 
-        const float thickness = std::min(4.f, 1.f + static_cast<float>(peers[i].weight) * 0.25f);
+        const float thickness = std::min(
+            Config::CONNECTION_EDGE_MAX_THICKNESS,
+            Config::CONNECTION_EDGE_BASE_THICKNESS +
+            static_cast<float>(peers[i].weight) * Config::CONNECTION_EDGE_WEIGHT_SCALE
+        );
 
         sf::RectangleShape edge({ length, thickness });
         edge.setPosition(center);
@@ -151,20 +151,24 @@ void ConnectionVisualizer::draw(sf::RenderWindow& window)
         edge.setFillColor(statusColor(peers[i].status));
         window.draw(edge);
 
-        const float nodeRadius = std::min(7.f, 3.f + static_cast<float>(peers[i].weight) * 0.22f);
+        const float nodeRadius = std::min(
+            Config::CONNECTION_NODE_MAX_RADIUS,
+            Config::CONNECTION_NODE_BASE_RADIUS +
+            static_cast<float>(peers[i].weight) * Config::CONNECTION_NODE_WEIGHT_SCALE
+        );
         sf::CircleShape remoteNode(nodeRadius);
         remoteNode.setOrigin({ nodeRadius, nodeRadius });
         remoteNode.setPosition(remote);
         remoteNode.setFillColor(headerColorForIndex(i));
         window.draw(remoteNode);
 
-        peerDrawData.push_back({ remote, nodeRadius + 4.f, peers[i] });
+        peerDrawData.push_back({ remote, nodeRadius + Config::CONNECTION_HIT_RADIUS_PADDING, peers[i] });
     }
 
-    sf::CircleShape localNode(7.f);
-    localNode.setOrigin({ 7.f, 7.f });
+    sf::CircleShape localNode(Config::CONNECTION_LOCAL_NODE_RADIUS);
+    localNode.setOrigin({ Config::CONNECTION_LOCAL_NODE_RADIUS, Config::CONNECTION_LOCAL_NODE_RADIUS });
     localNode.setPosition(center);
-    localNode.setFillColor({ 220, 220, 220 });
+    localNode.setFillColor(Config::CONNECTION_LOCAL_NODE_COLOR);
     window.draw(localNode);
 
     if (m_font) {
@@ -192,16 +196,25 @@ void ConnectionVisualizer::draw(sf::RenderWindow& window)
                 "tcp: " + std::to_string(hovered->summary.tcpCount) + "  udp: " + std::to_string(hovered->summary.udpCount) + "\n" +
                 "sockets: " + std::to_string(hovered->summary.weight);
 
-            sf::Text text(*m_font, tooltipText, 11);
-            text.setFillColor({ 220, 220, 220 });
-            text.setPosition({ hovered->position.x + 12.f, hovered->position.y - 10.f });
+            sf::Text text(*m_font, tooltipText, Config::BODY_FONT_SIZE);
+            text.setFillColor(Config::CONNECTION_LOCAL_NODE_COLOR);
+            text.setPosition({
+                hovered->position.x + Config::CONNECTION_TOOLTIP_OFFSET_X,
+                hovered->position.y + Config::CONNECTION_TOOLTIP_OFFSET_Y
+            });
 
             const sf::FloatRect bounds = text.getGlobalBounds();
-            sf::RectangleShape box({ bounds.size.x + 10.f, bounds.size.y + 8.f });
-            box.setPosition({ bounds.position.x - 5.f, bounds.position.y - 4.f });
-            box.setFillColor({ 20, 22, 28, 230 });
-            box.setOutlineThickness(1.f);
-            box.setOutlineColor({ 80, 90, 110 });
+            sf::RectangleShape box({
+                bounds.size.x + Config::CONNECTION_TOOLTIP_PADDING_X,
+                bounds.size.y + Config::CONNECTION_TOOLTIP_PADDING_Y
+            });
+            box.setPosition({
+                bounds.position.x - Config::CONNECTION_TOOLTIP_PADDING_X * 0.5f,
+                bounds.position.y - Config::CONNECTION_TOOLTIP_PADDING_Y * 0.5f
+            });
+            box.setFillColor(Config::TOOLTIP_FILL_COLOR);
+            box.setOutlineThickness(Config::PANEL_OUTLINE_THICKNESS);
+            box.setOutlineColor(Config::TOOLTIP_OUTLINE_COLOR);
 
             window.draw(box);
             window.draw(text);
