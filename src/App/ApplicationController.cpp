@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <ctime>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -41,6 +42,9 @@ using PanelLayoutArray = std::array<PanelLayout, static_cast<std::size_t>(PanelI
 
 PanelLayoutArray makePanels(float width, float height)
 {
+    width = std::max(width, static_cast<float>(Config::MIN_WINDOW_WIDTH));
+    height = std::max(height, static_cast<float>(Config::MIN_WINDOW_HEIGHT));
+
     const float pad = Config::PANEL_PADDING;
     const float colW = (width / 2.f) - pad * 1.5f;
     const float row3 = (height - pad * 4.f) / 3.f;
@@ -163,6 +167,9 @@ ApplicationController::ApplicationController()
     )
 {
     m_window.setFramerateLimit(Config::TARGET_FPS);
+    m_window.setMinimumSize(std::optional<sf::Vector2u> {
+        sf::Vector2u { Config::MIN_WINDOW_WIDTH, Config::MIN_WINDOW_HEIGHT }
+    });
 
     for (const char* path : Config::FONT_PATHS) {
         if (m_font.openFromFile(path)) {
@@ -290,6 +297,19 @@ void ApplicationController::processEvents()
             if (key->code == sf::Keyboard::Key::Escape) {
                 m_window.close();
             }
+        }
+
+        if (const auto* resized = event->getIf<sf::Event::Resized>()) {
+            m_window.setView(sf::View(
+                sf::Vector2f {
+                    static_cast<float>(resized->size.x) * 0.5f,
+                    static_cast<float>(resized->size.y) * 0.5f
+                },
+                sf::Vector2f {
+                    static_cast<float>(resized->size.x),
+                    static_cast<float>(resized->size.y)
+                }
+            ));
         }
 
         if (const auto* click = event->getIf<sf::Event::MouseButtonPressed>()) {

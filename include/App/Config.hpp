@@ -6,6 +6,8 @@
 namespace Config {
 inline constexpr unsigned int WINDOW_WIDTH  = 1280;
 inline constexpr unsigned int WINDOW_HEIGHT = 720;
+inline constexpr unsigned int MIN_WINDOW_WIDTH  = 1060;
+inline constexpr unsigned int MIN_WINDOW_HEIGHT = 640;
 inline constexpr unsigned int TARGET_FPS    = 60;
 inline constexpr const char*  WINDOW_TITLE  = "NetPulse Monitor";
 
