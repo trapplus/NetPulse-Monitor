@@ -1,6 +1,6 @@
 # NetPulse Monitor
 
-![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.2-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
@@ -114,8 +114,8 @@ NetPulse-Monitor/
 | M3 - Block 1: System Info | ✅ |
 | M4 - Block 4: Network Devices | ✅ |
 | M5 - Block 5: Connection Visualizer | ✅ |
-| M6 - Block 3: External IP | ⬜ |
-| M7 - Block 2: Packet Sniffer | ⬜ |
+| M6 - Block 3: External IP | ✅ |
+| M7 - Block 2: Packet Sniffer | ✅ |
 | M8 - UI polish, animations | ⬜ |
 | M9 - Docs, demo | ⬜ |
 
