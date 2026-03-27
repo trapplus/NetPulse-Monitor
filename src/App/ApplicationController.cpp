@@ -3,13 +3,20 @@
 #include "Data/ConnectionProvider.hpp" // explicit - DataManager.hpp only forward-declares providers
 #include "Data/ExternalAPIProvider.hpp"
 #include "Data/NetworkDeviceProvider.hpp"
+#include "Data/PacketSnifferProvider.hpp"
+#include "Data/RequestEntry.hpp"
 #include "Data/SystemInfoProvider.hpp"
 #include "Render/ConnectionVisualizer.hpp"
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -87,6 +94,65 @@ bool isCompleteDevice(const std::string& status)
     return status == "Complete";
 }
 
+std::string truncateText(const std::string& value, std::size_t maxLen)
+{
+    // Request-log columns use this helper to keep rows aligned; for tiny limits we skip ellipsis to avoid underflow.
+    if (value.size() <= maxLen) {
+        return value;
+    }
+
+    if (maxLen <= 3) {
+        return value.substr(0, maxLen);
+    }
+
+    return value.substr(0, maxLen - 3) + "...";
+}
+
+std::string formatTimestamp(const std::chrono::system_clock::time_point& point)
+{
+    const std::time_t timeValue = std::chrono::system_clock::to_time_t(point);
+    std::tm localTime {};
+#if defined(_WIN32)
+    localtime_s(&localTime, &timeValue);
+#else
+    // localtime_r is thread-safe, so formatting here stays safe even while worker threads keep running.
+    localtime_r(&timeValue, &localTime);
+#endif
+
+    std::ostringstream stream;
+    stream << std::put_time(&localTime, "%H:%M:%S");
+    return stream.str();
+}
+
+sf::Color requestMethodColor(const RequestEntry& entry)
+{
+    // Keeping method colors centralized makes the row renderer simpler and keeps badge colors consistent.
+    if (entry.isEncrypted) {
+        return Config::TEXT_DIM_COLOR;
+    }
+
+    if (entry.method == "GET") {
+        return Config::STATUS_ACTIVE_COLOR;
+    }
+    if (entry.method == "POST") {
+        return Config::REQUEST_LOG_POST_COLOR;
+    }
+    if (entry.method == "PUT") {
+        return Config::STATUS_INACTIVE_COLOR;
+    }
+    if (entry.method == "DELETE") {
+        return Config::REQUEST_LOG_DELETE_COLOR;
+    }
+    if (entry.method == "PATCH") {
+        return Config::REQUEST_LOG_PATCH_COLOR;
+    }
+    if (entry.method == "HEAD" || entry.method == "OPTIONS") {
+        return Config::REQUEST_LOG_OPTIONS_COLOR;
+    }
+
+    return Config::TEXT_DIM_COLOR;
+}
+
 } // namespace
 
 ApplicationController::ApplicationController()
@@ -109,6 +175,8 @@ ApplicationController::ApplicationController()
     m_data.networkDevices = std::make_unique<NetworkDeviceProvider>();
     m_data.connections = std::make_unique<ConnectionProvider>();
     m_data.externalAPI = std::make_unique<ExternalAPIProvider>();
+    m_data.packetSniffer = std::make_unique<PacketSnifferProvider>();
+    m_interfaces = m_data.packetSniffer->getAvailableInterfaces();
 
     // local providers are cheap enough to prime synchronously before the first frame
     m_data.systemInfo->fetch();
@@ -145,6 +213,8 @@ void ApplicationController::startWorkers()
                     m_data.networkDevices->fetch();
                 if (m_data.connections)
                     m_data.connections->fetch();
+                if (m_data.packetSniffer)
+                    m_data.packetSniffer->fetch();
                 nextNetworkFetch = now + Config::DATA_REFRESH_INTERVAL;
             }
 
@@ -187,6 +257,9 @@ void ApplicationController::stopWorkers()
     if (m_data.externalAPI) {
         m_data.externalAPI->stop();
     }
+    if (m_data.packetSniffer) {
+        m_data.packetSniffer->stop();
+    }
 
     if (m_dataThread.joinable()) {
         m_dataThread.join();
@@ -218,6 +291,23 @@ void ApplicationController::processEvents()
                 m_window.close();
             }
         }
+
+        if (const auto* click = event->getIf<sf::Event::MouseButtonPressed>()) {
+            if (click->button == sf::Mouse::Button::Left) {
+                const sf::Vector2f pos {
+                    static_cast<float>(click->position.x),
+                    static_cast<float>(click->position.y)
+                };
+                for (std::size_t i = 0; i < m_ifaceButtonBounds.size(); ++i) {
+                    if (m_ifaceButtonBounds[i].contains(pos)) {
+                        m_selectedInterface = i;
+                        if (m_data.packetSniffer && i < m_interfaces.size())
+                            m_data.packetSniffer->setInterface(m_interfaces[i]);
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -230,6 +320,7 @@ void ApplicationController::render()
     m_window.clear(sf::Color(Config::BG_R, Config::BG_G, Config::BG_B));
     renderPlaceholders();
     renderSystemInfo();
+    renderRequestLog();
     renderNetworkDevices();
     renderExternalAPI();
     renderConnections();
@@ -243,6 +334,7 @@ void ApplicationController::renderPlaceholders()
     const auto panels = makePanels(width, height);
 
     const auto externalData = m_data.externalAPI ? m_data.externalAPI->getData() : ExternalAPIProvider::Snapshot{};
+    const bool hasRequestLog = m_data.packetSniffer && !m_data.packetSniffer->getData().empty();
     const bool hasNetworkDevices = m_data.networkDevices && !m_data.networkDevices->getData().empty();
     const bool hasConnections = m_data.connections && !m_data.connections->getData().empty();
 
@@ -266,6 +358,9 @@ void ApplicationController::renderPlaceholders()
         m_window.draw(title);
 
         if (i > 0) {
+            if (i == static_cast<std::size_t>(PanelId::RequestLog) && hasRequestLog) {
+                continue;
+            }
             if (i == static_cast<std::size_t>(PanelId::ExternalIP) && externalData.isFresh) {
                 continue;
             }
@@ -327,6 +422,124 @@ void ApplicationController::renderSystemInfo()
         status.setFillColor(toolStatusColor(tool.status));
         status.setPosition({ panel.x + panel.w - Config::SYSTEM_INFO_STATUS_OFFSET, y });
         m_window.draw(status);
+    }
+}
+
+void ApplicationController::renderRequestLog()
+{
+    if (!m_fontLoaded) {
+        return;
+    }
+
+    const auto panels = makePanels(
+        static_cast<float>(m_window.getSize().x),
+        static_cast<float>(m_window.getSize().y)
+    );
+    const auto& panel = panelFor(panels, PanelId::RequestLog);
+
+    // Click targets are frame-dependent, so clear and rebuild them every render pass.
+    m_ifaceButtonBounds.clear();
+
+    const float marginX = panel.x + Config::PANEL_INNER_PADDING;
+    const float titleY = panel.y + Config::PANEL_TITLE_OFFSET_Y;
+    float rightEdge = panel.x + panel.w - Config::PANEL_INNER_PADDING;
+
+    // Keep hit boxes indexed by m_interfaces, but lay out right-to-left so long interface names consume right edge first.
+    m_ifaceButtonBounds.resize(m_interfaces.size());
+    for (std::size_t reverse = 0; reverse < m_interfaces.size(); ++reverse) {
+        const std::size_t i = m_interfaces.size() - 1 - reverse;
+        sf::Text label(m_font, m_interfaces[i], Config::BODY_FONT_SIZE);
+        // Local bounds gives glyph size only; global bounds would include transforms and skew button sizing.
+        const sf::FloatRect textBounds = label.getLocalBounds();
+
+        const float buttonWidth = textBounds.size.x + Config::IFACE_BUTTON_PADDING_X * 2.f;
+        const float buttonHeight = textBounds.size.y + Config::IFACE_BUTTON_PADDING_Y * 2.f;
+        const float buttonX = rightEdge - buttonWidth;
+        const float buttonY = titleY;
+
+        m_ifaceButtonBounds[i] = sf::FloatRect({ buttonX, buttonY }, { buttonWidth, buttonHeight });
+
+        sf::RectangleShape button({ buttonWidth, buttonHeight });
+        button.setPosition({ buttonX, buttonY });
+        if (i == m_selectedInterface) {
+            button.setFillColor(Config::STATUS_ACTIVE_COLOR);
+        } else {
+            button.setFillColor(Config::PANEL_FILL_COLOR);
+            button.setOutlineColor(Config::PANEL_BORDER_COLOR);
+            button.setOutlineThickness(Config::PANEL_OUTLINE_THICKNESS);
+        }
+        m_window.draw(button);
+
+        label.setPosition({
+            buttonX + Config::IFACE_BUTTON_PADDING_X - textBounds.position.x,
+            buttonY + Config::IFACE_BUTTON_PADDING_Y - textBounds.position.y
+        });
+        label.setFillColor(i == m_selectedInterface ? sf::Color { 20, 20, 20 } : Config::TEXT_SECONDARY_COLOR);
+        m_window.draw(label);
+
+        rightEdge = buttonX - Config::IFACE_BUTTON_SPACING;
+    }
+
+    if (m_interfaces.empty()) {
+        sf::Text noInterfaces(m_font, "no interfaces", Config::BODY_FONT_SIZE);
+        noInterfaces.setFillColor(Config::TEXT_DIM_COLOR);
+        noInterfaces.setPosition({ rightEdge - noInterfaces.getLocalBounds().size.x, titleY });
+        m_window.draw(noInterfaces);
+    }
+
+    const float startY = panel.y + Config::PANEL_CONTENT_TOP + Config::PANEL_LINE_HEIGHT;
+    const float lineH = Config::PANEL_LINE_HEIGHT;
+
+    const auto entries = m_data.packetSniffer
+        ? m_data.packetSniffer->getData()
+        : std::vector<RequestEntry> {};
+
+    if (entries.empty() && m_data.packetSniffer) {
+        sf::Text empty(m_font, "no traffic captured", Config::BODY_FONT_SIZE);
+        empty.setFillColor(Config::TEXT_DIM_COLOR);
+        empty.setPosition({ marginX, startY });
+        m_window.draw(empty);
+        return;
+    }
+
+    std::size_t row = 0;
+    // Show newest rows first so fresh traffic is immediately visible without scrolling.
+    for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+        const float y = startY + static_cast<float>(row) * lineH;
+        if (y + lineH > panel.y + panel.h) {
+            break;
+        }
+
+        const auto& entry = *it;
+
+        sf::Text timeText(m_font, formatTimestamp(entry.timestamp), Config::BODY_FONT_SIZE);
+        timeText.setFillColor(Config::TEXT_DIM_COLOR);
+        timeText.setPosition({ marginX, y });
+        m_window.draw(timeText);
+
+        const std::string methodLabel = entry.isEncrypted ? "HTTPS" : entry.method;
+        sf::Text methodText(m_font, methodLabel, Config::BODY_FONT_SIZE);
+        methodText.setFillColor(requestMethodColor(entry));
+        methodText.setPosition({ marginX + Config::REQUEST_LOG_TIME_OFFSET, y });
+        m_window.draw(methodText);
+
+        sf::Text hostText(m_font, truncateText(entry.host, 28), Config::BODY_FONT_SIZE);
+        hostText.setFillColor(Config::TEXT_PRIMARY_COLOR);
+        hostText.setPosition({ marginX + Config::REQUEST_LOG_TIME_OFFSET + Config::REQUEST_LOG_METHOD_OFFSET, y });
+        m_window.draw(hostText);
+
+        const std::string tailText = entry.isEncrypted
+            ? std::to_string(entry.payloadBytes) + " bytes"
+            : truncateText(entry.path, 35);
+        sf::Text tail(m_font, tailText, Config::BODY_FONT_SIZE);
+        tail.setFillColor(entry.isEncrypted ? Config::TEXT_DIM_COLOR : Config::TEXT_SECONDARY_COLOR);
+        tail.setPosition({
+            marginX + Config::REQUEST_LOG_TIME_OFFSET + Config::REQUEST_LOG_METHOD_OFFSET + Config::REQUEST_LOG_HOST_OFFSET,
+            y
+        });
+        m_window.draw(tail);
+
+        ++row;
     }
 }
 
