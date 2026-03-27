@@ -7,15 +7,18 @@
 #include "Data/RequestEntry.hpp"
 #include "Data/SystemInfoProvider.hpp"
 #include "Render/ConnectionVisualizer.hpp"
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <ctime>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -38,22 +41,45 @@ struct PanelLayout {
 };
 
 using PanelLayoutArray = std::array<PanelLayout, static_cast<std::size_t>(PanelId::Count)>;
+using LabelArray = std::array<std::string_view, 4>;
+
+constexpr LabelArray kVisualizerModeLabels { "ALL", "TCP", "UDP", "STATE" };
+
+std::string_view panelKicker(PanelId id)
+{
+    switch (id) {
+        case PanelId::SystemInfo: return "RUNTIME";
+        case PanelId::RequestLog: return "TRAFFIC";
+        case PanelId::ExternalIP: return "UPLINK";
+        case PanelId::NetworkDevices: return "LAN";
+        case PanelId::ConnectionVisualizer: return "GRAPH";
+        case PanelId::Count: break;
+    }
+    return "";
+}
 
 PanelLayoutArray makePanels(float width, float height)
 {
+    width = std::max(width, static_cast<float>(Config::MIN_WINDOW_WIDTH));
+    height = std::max(height, static_cast<float>(Config::MIN_WINDOW_HEIGHT));
+
     const float pad = Config::PANEL_PADDING;
-    const float colW = (width / 2.f) - pad * 1.5f;
-    const float row3 = (height - pad * 4.f) / 3.f;
-    const float row2 = (height - pad * 3.f) / 2.f;
+    const float colW = (width - pad * 3.f) * 0.5f;
+    const float contentH = height - pad * 2.f;
+    const float leftTopH = Config::SYSTEM_INFO_FIXED_HEIGHT;
+    const float leftBottomH = contentH - pad - leftTopH;
+    const float rightTopH = Config::NETWORK_DEVICES_FIXED_HEIGHT;
+    const float rightMidH = Config::EXTERNAL_API_FIXED_HEIGHT;
+    const float rightBottomH = contentH - pad * 2.f - rightTopH - rightMidH;
     const float xL = pad;
-    const float xR = width / 2.f + pad * 0.5f;
+    const float xR = xL + colW + pad;
 
     return {{
-        { "System Info", xL, pad, colW, row3 - pad },
-        { "Request Log", xL, pad * 2.f + row3, colW, row3 - pad },
-        { "External IP", xL, pad * 3.f + row3 * 2.f, colW, row3 - pad },
-        { "Network Devices", xR, pad, colW, row2 - pad },
-        { "Connection Visualizer", xR, pad * 2.f + row2, colW, row2 - pad },
+        { "System Info", xL, pad, colW, leftTopH },
+        { "Request Log", xL, pad + leftTopH + pad, colW, leftBottomH },
+        { "External IP", xR, pad + rightTopH + pad, colW, rightMidH },
+        { "Network Devices", xR, pad, colW, rightTopH },
+        { "Connection Visualizer", xR, pad + rightTopH + pad + rightMidH + pad, colW, rightBottomH },
     }};
 }
 
@@ -82,16 +108,129 @@ const char* toolStatusLabel(ToolInfo::Status status)
     return "";
 }
 
-sf::Color panelTitleColor(std::size_t index)
-{
-    return (index < Config::PANEL_TITLE_COLORS.size())
-        ? Config::PANEL_TITLE_COLORS[index]
-        : Config::TEXT_DIM_COLOR;
-}
-
 bool isCompleteDevice(const std::string& status)
 {
     return status == "Complete";
+}
+
+void drawRoundedRect(sf::RenderWindow& window,
+                     const sf::FloatRect& rect,
+                     float radius,
+                     const sf::Color& fillColor)
+{
+    const float clampedRadius = std::min(radius, std::min(rect.size.x, rect.size.y) * 0.5f);
+    if (clampedRadius <= 0.f) {
+        sf::RectangleShape box(rect.size);
+        box.setPosition(rect.position);
+        box.setFillColor(fillColor);
+        window.draw(box);
+        return;
+    }
+
+    sf::RectangleShape horizontal({ rect.size.x - clampedRadius * 2.f, rect.size.y });
+    horizontal.setPosition({ rect.position.x + clampedRadius, rect.position.y });
+    horizontal.setFillColor(fillColor);
+    window.draw(horizontal);
+
+    sf::RectangleShape vertical({ rect.size.x, rect.size.y - clampedRadius * 2.f });
+    vertical.setPosition({ rect.position.x, rect.position.y + clampedRadius });
+    vertical.setFillColor(fillColor);
+    window.draw(vertical);
+
+    for (const sf::Vector2f center : {
+             sf::Vector2f { rect.position.x + clampedRadius, rect.position.y + clampedRadius },
+             sf::Vector2f { rect.position.x + rect.size.x - clampedRadius, rect.position.y + clampedRadius },
+             sf::Vector2f { rect.position.x + clampedRadius, rect.position.y + rect.size.y - clampedRadius },
+             sf::Vector2f { rect.position.x + rect.size.x - clampedRadius, rect.position.y + rect.size.y - clampedRadius },
+         }) {
+        sf::CircleShape corner(clampedRadius, 24);
+        corner.setOrigin({ clampedRadius, clampedRadius });
+        corner.setPosition(center);
+        corner.setFillColor(fillColor);
+        window.draw(corner);
+    }
+}
+
+void drawRoundedFrame(sf::RenderWindow& window, const sf::FloatRect& rect)
+{
+    const sf::FloatRect shadowRect {
+        { rect.position.x, rect.position.y + 2.f },
+        rect.size
+    };
+    drawRoundedRect(window, shadowRect, Config::PANEL_CORNER_RADIUS, Config::PANEL_SHADOW_COLOR);
+    drawRoundedRect(window, rect, Config::PANEL_CORNER_RADIUS, Config::PANEL_BORDER_COLOR);
+
+    const float inset = Config::PANEL_OUTLINE_THICKNESS;
+    drawRoundedRect(window,
+                    sf::FloatRect {
+                        { rect.position.x + inset, rect.position.y + inset },
+                        { rect.size.x - inset * 2.f, rect.size.y - inset * 2.f }
+                    },
+                    std::max(0.f, Config::PANEL_CORNER_RADIUS - inset),
+                    Config::PANEL_FILL_COLOR);
+}
+
+void drawPillButton(sf::RenderWindow& window,
+                    const sf::FloatRect& bounds,
+                    bool selected)
+{
+    drawRoundedRect(window,
+                    bounds,
+                    Config::BUTTON_CORNER_RADIUS,
+                    selected ? Config::STATUS_ACTIVE_COLOR : Config::BUTTON_IDLE_FILL_COLOR);
+}
+
+void drawContentSurface(sf::RenderWindow& window, const sf::FloatRect& bounds)
+{
+    drawRoundedRect(window,
+                    bounds,
+                    Config::BUTTON_CORNER_RADIUS + 2.f,
+                    Config::CONTENT_SURFACE_OUTLINE_COLOR);
+    drawRoundedRect(window,
+                    sf::FloatRect {
+                        { bounds.position.x + 1.f, bounds.position.y + 1.f },
+                        { bounds.size.x - 2.f, bounds.size.y - 2.f }
+                    },
+                    std::max(0.f, Config::BUTTON_CORNER_RADIUS + 1.f),
+                    Config::CONTENT_SURFACE_FILL_COLOR);
+}
+
+void drawHoverRow(sf::RenderWindow& window, const sf::FloatRect& bounds)
+{
+    drawRoundedRect(window,
+                    bounds,
+                    Config::BUTTON_CORNER_RADIUS,
+                    Config::ROW_HOVER_FILL_COLOR);
+}
+
+sf::FloatRect makeContentSurfaceRect(const PanelLayout& panel, float contentTop)
+{
+    return sf::FloatRect {
+        { panel.x + Config::CONTENT_SURFACE_INSET_X, panel.y + contentTop + Config::CONTENT_SURFACE_TOP_OFFSET },
+        {
+            panel.w - Config::CONTENT_SURFACE_INSET_X * 2.f,
+            panel.h - contentTop - Config::CONTENT_SURFACE_BOTTOM_INSET
+        }
+    };
+}
+
+void drawPanelHeader(sf::RenderWindow& window,
+                     const sf::Font& titleFont,
+                     const PanelLayout& panel,
+                     PanelId id)
+{
+    const float textX = panel.x + Config::PANEL_TITLE_OFFSET_X;
+
+    sf::Text kicker(titleFont, std::string(panelKicker(id)), Config::KICKER_FONT_SIZE);
+    kicker.setFillColor(Config::TEXT_DIM_COLOR);
+    kicker.setLetterSpacing(1.3f);
+    kicker.setPosition({ textX, panel.y + Config::PANEL_TITLE_OFFSET_Y + Config::HEADER_KICKER_OFFSET_Y });
+    window.draw(kicker);
+
+    sf::Text title(titleFont, std::string(panel.title), Config::TITLE_FONT_SIZE);
+    title.setFillColor(Config::HEADER_ICON_FILL_COLOR);
+    title.setPosition({ textX, panel.y + Config::PANEL_TITLE_OFFSET_Y + Config::HEADER_TITLE_OFFSET_Y });
+    window.draw(title);
 }
 
 std::string truncateText(const std::string& value, std::size_t maxLen)
@@ -163,6 +302,9 @@ ApplicationController::ApplicationController()
     )
 {
     m_window.setFramerateLimit(Config::TARGET_FPS);
+    m_window.setMinimumSize(std::optional<sf::Vector2u> {
+        sf::Vector2u { Config::MIN_WINDOW_WIDTH, Config::MIN_WINDOW_HEIGHT }
+    });
 
     for (const char* path : Config::FONT_PATHS) {
         if (m_font.openFromFile(path)) {
@@ -292,18 +434,43 @@ void ApplicationController::processEvents()
             }
         }
 
+        if (const auto* resized = event->getIf<sf::Event::Resized>()) {
+            m_window.setView(sf::View(
+                sf::Vector2f {
+                    static_cast<float>(resized->size.x) * 0.5f,
+                    static_cast<float>(resized->size.y) * 0.5f
+                },
+                sf::Vector2f {
+                    static_cast<float>(resized->size.x),
+                    static_cast<float>(resized->size.y)
+                }
+            ));
+        }
+
         if (const auto* click = event->getIf<sf::Event::MouseButtonPressed>()) {
             if (click->button == sf::Mouse::Button::Left) {
                 const sf::Vector2f pos {
                     static_cast<float>(click->position.x),
                     static_cast<float>(click->position.y)
                 };
+                bool handled = false;
+
                 for (std::size_t i = 0; i < m_ifaceButtonBounds.size(); ++i) {
                     if (m_ifaceButtonBounds[i].contains(pos)) {
                         m_selectedInterface = i;
                         if (m_data.packetSniffer && i < m_interfaces.size())
                             m_data.packetSniffer->setInterface(m_interfaces[i]);
+                        handled = true;
                         break;
+                    }
+                }
+
+                if (!handled) {
+                    for (std::size_t i = 0; i < m_visualizerModeButtonBounds.size(); ++i) {
+                        if (m_visualizerModeButtonBounds[i].contains(pos)) {
+                            m_selectedVisualizerMode = i;
+                            break;
+                        }
                     }
                 }
             }
@@ -339,23 +506,20 @@ void ApplicationController::renderPlaceholders()
     const bool hasConnections = m_data.connections && !m_data.connections->getData().empty();
 
     for (std::size_t i = 0; i < panels.size(); ++i) {
-        const auto& panel = panels[i];
+    const auto& panel = panels[i];
 
-        sf::RectangleShape bg({ panel.w, panel.h });
-        bg.setPosition({ panel.x, panel.y });
-        bg.setFillColor(Config::PANEL_FILL_COLOR);
-        bg.setOutlineThickness(Config::PANEL_OUTLINE_THICKNESS);
-        bg.setOutlineColor(Config::PANEL_BORDER_COLOR);
-        m_window.draw(bg);
+        drawRoundedFrame(m_window, sf::FloatRect { { panel.x, panel.y }, { panel.w, panel.h } });
 
         if (!m_fontLoaded) {
             continue;
         }
 
-        sf::Text title(m_font, std::string(panel.title), Config::TITLE_FONT_SIZE);
-        title.setFillColor(panelTitleColor(i));
-        title.setPosition({ panel.x + Config::PANEL_TITLE_OFFSET_X, panel.y + Config::PANEL_TITLE_OFFSET_Y });
-        m_window.draw(title);
+        drawPanelHeader(
+            m_window,
+            m_font,
+            panel,
+            static_cast<PanelId>(i)
+        );
 
         if (i > 0) {
             if (i == static_cast<std::size_t>(PanelId::RequestLog) && hasRequestLog) {
@@ -396,13 +560,32 @@ void ApplicationController::renderSystemInfo()
         return;
     }
 
-    const float startY = panel.y + Config::PANEL_CONTENT_TOP;
+    const sf::FloatRect surface = makeContentSurfaceRect(panel, Config::PANEL_CONTENT_TOP);
+    drawContentSurface(m_window, surface);
+
+    const float marginX = surface.position.x + Config::CONTENT_SURFACE_PADDING_X;
+    const float headerY = surface.position.y + Config::CONTENT_SURFACE_PADDING_Y;
+    const float startY = headerY + Config::PANEL_TABLE_HEADER_HEIGHT;
     const float lineH = Config::PANEL_LINE_HEIGHT;
-    const float marginX = panel.x + Config::PANEL_INNER_PADDING;
+
+    sf::Text nameHeader(m_font, "service", Config::CAPTION_FONT_SIZE);
+    nameHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    nameHeader.setPosition({ marginX, headerY });
+    m_window.draw(nameHeader);
+
+    sf::Text versionHeader(m_font, "version", Config::CAPTION_FONT_SIZE);
+    versionHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    versionHeader.setPosition({ marginX + Config::SYSTEM_INFO_VERSION_OFFSET, headerY });
+    m_window.draw(versionHeader);
+
+    sf::Text statusHeader(m_font, "status", Config::CAPTION_FONT_SIZE);
+    statusHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    statusHeader.setPosition({ surface.position.x + surface.size.x - Config::SYSTEM_INFO_STATUS_OFFSET, headerY });
+    m_window.draw(statusHeader);
 
     for (std::size_t i = 0; i < tools.size(); ++i) {
         const float y = startY + static_cast<float>(i) * lineH;
-        if (y + lineH > panel.y + panel.h) {
+        if (y + lineH > surface.position.y + surface.size.y - Config::CONTENT_SURFACE_PADDING_Y) {
             break;
         }
 
@@ -420,7 +603,7 @@ void ApplicationController::renderSystemInfo()
 
         sf::Text status(m_font, toolStatusLabel(tool.status), Config::BODY_FONT_SIZE);
         status.setFillColor(toolStatusColor(tool.status));
-        status.setPosition({ panel.x + panel.w - Config::SYSTEM_INFO_STATUS_OFFSET, y });
+        status.setPosition({ surface.position.x + surface.size.x - Config::SYSTEM_INFO_STATUS_OFFSET, y });
         m_window.draw(status);
     }
 }
@@ -440,7 +623,6 @@ void ApplicationController::renderRequestLog()
     // Click targets are frame-dependent, so clear and rebuild them every render pass.
     m_ifaceButtonBounds.clear();
 
-    const float marginX = panel.x + Config::PANEL_INNER_PADDING;
     const float titleY = panel.y + Config::PANEL_TITLE_OFFSET_Y;
     float rightEdge = panel.x + panel.w - Config::PANEL_INNER_PADDING;
 
@@ -458,26 +640,23 @@ void ApplicationController::renderRequestLog()
         const float buttonY = titleY;
 
         m_ifaceButtonBounds[i] = sf::FloatRect({ buttonX, buttonY }, { buttonWidth, buttonHeight });
-
-        sf::RectangleShape button({ buttonWidth, buttonHeight });
-        button.setPosition({ buttonX, buttonY });
-        if (i == m_selectedInterface) {
-            button.setFillColor(Config::STATUS_ACTIVE_COLOR);
-        } else {
-            button.setFillColor(Config::PANEL_FILL_COLOR);
-            button.setOutlineColor(Config::PANEL_BORDER_COLOR);
-            button.setOutlineThickness(Config::PANEL_OUTLINE_THICKNESS);
-        }
-        m_window.draw(button);
-
-        label.setPosition({
-            buttonX + Config::IFACE_BUTTON_PADDING_X - textBounds.position.x,
-            buttonY + Config::IFACE_BUTTON_PADDING_Y - textBounds.position.y
-        });
-        label.setFillColor(i == m_selectedInterface ? sf::Color { 20, 20, 20 } : Config::TEXT_SECONDARY_COLOR);
-        m_window.draw(label);
-
         rightEdge = buttonX - Config::IFACE_BUTTON_SPACING;
+    }
+
+    if (!m_interfaces.empty()) {
+        for (std::size_t i = 0; i < m_interfaces.size(); ++i) {
+            const auto& bounds = m_ifaceButtonBounds[i];
+            drawPillButton(m_window, bounds, i == m_selectedInterface);
+
+            sf::Text label(m_font, m_interfaces[i], Config::BODY_FONT_SIZE);
+            const sf::FloatRect textBounds = label.getLocalBounds();
+            label.setPosition({
+                bounds.position.x + Config::IFACE_BUTTON_PADDING_X - textBounds.position.x,
+                bounds.position.y + Config::IFACE_BUTTON_PADDING_Y - textBounds.position.y
+            });
+            label.setFillColor(i == m_selectedInterface ? sf::Color { 20, 20, 20 } : Config::TEXT_SECONDARY_COLOR);
+            m_window.draw(label);
+        }
     }
 
     if (m_interfaces.empty()) {
@@ -487,8 +666,36 @@ void ApplicationController::renderRequestLog()
         m_window.draw(noInterfaces);
     }
 
-    const float startY = panel.y + Config::PANEL_CONTENT_TOP + Config::PANEL_LINE_HEIGHT;
+    const sf::FloatRect surface = makeContentSurfaceRect(panel, Config::PANEL_CONTENT_TOP);
+    drawContentSurface(m_window, surface);
+
+    const float marginX = surface.position.x + Config::CONTENT_SURFACE_PADDING_X;
+    const float headerY = surface.position.y + Config::CONTENT_SURFACE_PADDING_Y;
+    const float startY = headerY + Config::PANEL_TABLE_HEADER_HEIGHT;
     const float lineH = Config::PANEL_LINE_HEIGHT;
+
+    sf::Text timeHeader(m_font, "time", Config::CAPTION_FONT_SIZE);
+    timeHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    timeHeader.setPosition({ marginX, headerY });
+    m_window.draw(timeHeader);
+
+    sf::Text methodHeader(m_font, "method", Config::CAPTION_FONT_SIZE);
+    methodHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    methodHeader.setPosition({ marginX + Config::REQUEST_LOG_TIME_OFFSET, headerY });
+    m_window.draw(methodHeader);
+
+    sf::Text hostHeader(m_font, "host / ip", Config::CAPTION_FONT_SIZE);
+    hostHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    hostHeader.setPosition({ marginX + Config::REQUEST_LOG_TIME_OFFSET + Config::REQUEST_LOG_METHOD_OFFSET, headerY });
+    m_window.draw(hostHeader);
+
+    sf::Text bytesHeader(m_font, "path / bytes", Config::CAPTION_FONT_SIZE);
+    bytesHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    bytesHeader.setPosition({
+        marginX + Config::REQUEST_LOG_TIME_OFFSET + Config::REQUEST_LOG_METHOD_OFFSET + Config::REQUEST_LOG_HOST_OFFSET,
+        headerY
+    });
+    m_window.draw(bytesHeader);
 
     const auto entries = m_data.packetSniffer
         ? m_data.packetSniffer->getData()
@@ -506,7 +713,7 @@ void ApplicationController::renderRequestLog()
     // Show newest rows first so fresh traffic is immediately visible without scrolling.
     for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
         const float y = startY + static_cast<float>(row) * lineH;
-        if (y + lineH > panel.y + panel.h) {
+        if (y + lineH > surface.position.y + surface.size.y - Config::CONTENT_SURFACE_PADDING_Y) {
             break;
         }
 
@@ -560,17 +767,89 @@ void ApplicationController::renderNetworkDevices()
         return;
     }
 
-    const float startY = panel.y + Config::PANEL_CONTENT_TOP;
+    const sf::FloatRect surface = makeContentSurfaceRect(panel, Config::NETWORK_TABLE_TOP);
+    drawContentSurface(m_window, surface);
+
+    const float headerY = surface.position.y + Config::CONTENT_SURFACE_PADDING_Y;
+    const float startY = headerY + Config::PANEL_TABLE_HEADER_HEIGHT;
     const float lineH = Config::PANEL_LINE_HEIGHT;
-    const float marginX = panel.x + Config::PANEL_INNER_PADDING;
+    const float marginX = surface.position.x + Config::CONTENT_SURFACE_PADDING_X;
+    int completeCount = 0;
+    std::unordered_set<std::string> interfaces;
+    for (const auto& device : devices) {
+        if (isCompleteDevice(device.status)) {
+            ++completeCount;
+        }
+        interfaces.insert(device.iface);
+    }
+
+    const std::array<std::pair<std::string, sf::Color>, 3> summary = {{
+        { "hosts " + std::to_string(devices.size()), Config::TEXT_PRIMARY_COLOR },
+        { "ready " + std::to_string(completeCount), Config::STATUS_ACTIVE_COLOR },
+        { "ifaces " + std::to_string(interfaces.size()), Config::INTERFACE_ACCENT_COLOR }
+    }};
+
+    float summaryX = marginX;
+    for (const auto& item : summary) {
+        sf::Text label(m_font, item.first, Config::CAPTION_FONT_SIZE);
+        const sf::FloatRect textBounds = label.getLocalBounds();
+        const sf::FloatRect chipBounds(
+            { summaryX, panel.y + Config::NETWORK_SUMMARY_TOP },
+            {
+                textBounds.size.x + Config::MODE_BUTTON_PADDING_X * 1.6f,
+                textBounds.size.y + Config::MODE_BUTTON_PADDING_Y * 1.5f
+            }
+        );
+        drawRoundedRect(m_window, chipBounds, Config::BUTTON_CORNER_RADIUS, Config::BUTTON_IDLE_FILL_COLOR);
+        label.setFillColor(item.second);
+        label.setPosition({
+            chipBounds.position.x + Config::MODE_BUTTON_PADDING_X * 0.8f - textBounds.position.x,
+            chipBounds.position.y + Config::MODE_BUTTON_PADDING_Y * 0.55f - textBounds.position.y
+        });
+        m_window.draw(label);
+        summaryX = chipBounds.position.x + chipBounds.size.x + Config::NETWORK_SUMMARY_GAP;
+    }
+
+    const sf::Vector2i mousePixels = sf::Mouse::getPosition(m_window);
+    const sf::Vector2f mouse { static_cast<float>(mousePixels.x), static_cast<float>(mousePixels.y) };
+    const NetworkDeviceInfo* hoveredDevice = nullptr;
+
+    sf::Text ipHeader(m_font, "ip", Config::CAPTION_FONT_SIZE);
+    ipHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    ipHeader.setPosition({ marginX, headerY });
+    m_window.draw(ipHeader);
+
+    sf::Text macHeader(m_font, "mac", Config::CAPTION_FONT_SIZE);
+    macHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    macHeader.setPosition({ marginX + Config::NETWORK_MAC_OFFSET, headerY });
+    m_window.draw(macHeader);
+
+    sf::Text ifaceHeader(m_font, "iface", Config::CAPTION_FONT_SIZE);
+    ifaceHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    ifaceHeader.setPosition({ marginX + Config::NETWORK_IFACE_OFFSET, headerY });
+    m_window.draw(ifaceHeader);
+
+    sf::Text statusHeader(m_font, "status", Config::CAPTION_FONT_SIZE);
+    statusHeader.setFillColor(Config::TEXT_DIM_COLOR);
+    statusHeader.setPosition({ surface.position.x + surface.size.x - Config::NETWORK_STATUS_OFFSET, headerY });
+    m_window.draw(statusHeader);
 
     for (std::size_t i = 0; i < devices.size(); ++i) {
         const float y = startY + static_cast<float>(i) * lineH;
-        if (y + lineH > panel.y + panel.h) {
+        if (y + lineH > surface.position.y + surface.size.y - Config::NETWORK_FOOTER_HEIGHT) {
             break;
         }
 
         const auto& device = devices[i];
+        const sf::FloatRect rowBounds(
+            { surface.position.x + 2.f, y - 2.f },
+            { surface.size.x - 4.f, lineH + 2.f }
+        );
+        const bool hovered = rowBounds.contains(mouse);
+        if (hovered) {
+            hoveredDevice = &device;
+            drawHoverRow(m_window, rowBounds);
+        }
 
         sf::Text ip(m_font, device.ip, Config::BODY_FONT_SIZE);
         ip.setFillColor(Config::TEXT_PRIMARY_COLOR);
@@ -590,8 +869,22 @@ void ApplicationController::renderNetworkDevices()
         sf::Text status(m_font, device.status, Config::BODY_FONT_SIZE);
         status.setFillColor(isCompleteDevice(device.status) ? Config::STATUS_ACTIVE_COLOR
                                                             : Config::STATUS_INACTIVE_COLOR);
-        status.setPosition({ panel.x + panel.w - Config::NETWORK_STATUS_OFFSET, y });
+        status.setPosition({ surface.position.x + surface.size.x - Config::NETWORK_STATUS_OFFSET, y });
         m_window.draw(status);
+    }
+
+    if (hoveredDevice) {
+        sf::Text footer(
+            m_font,
+            hoveredDevice->ip + " -> " + hoveredDevice->mac + " on " + hoveredDevice->iface,
+            Config::CAPTION_FONT_SIZE
+        );
+        footer.setFillColor(Config::TEXT_DIM_COLOR);
+        footer.setPosition({
+            marginX,
+            surface.position.y + surface.size.y - Config::NETWORK_FOOTER_HEIGHT
+        });
+        m_window.draw(footer);
     }
 }
 
@@ -612,28 +905,30 @@ void ApplicationController::renderExternalAPI()
     );
     const auto& panel = panelFor(panels, PanelId::ExternalIP);
 
-    const float startY = panel.y + Config::EXTERNAL_API_CONTENT_TOP;
-    const float lineH = Config::PANEL_LINE_HEIGHT;
-    const float marginX = panel.x + Config::PANEL_INNER_PADDING;
+    const float lineH = Config::EXTERNAL_API_LINE_GAP;
+    const sf::FloatRect surface = makeContentSurfaceRect(panel, Config::EXTERNAL_API_CONTENT_TOP);
+    drawContentSurface(m_window, surface);
+    const float externalMarginX = surface.position.x + Config::CONTENT_SURFACE_PADDING_X;
+    const float contentTop = surface.position.y + Config::CONTENT_SURFACE_PADDING_Y;
 
     sf::Text ip(m_font, "IP: " + snapshot.ip, Config::BODY_FONT_SIZE);
     ip.setFillColor(Config::EXTERNAL_IP_COLOR);
-    ip.setPosition({ marginX, startY });
+    ip.setPosition({ externalMarginX, contentTop });
     m_window.draw(ip);
 
     sf::Text provider(m_font, "Provider: " + snapshot.provider, Config::BODY_FONT_SIZE);
     provider.setFillColor(Config::EXTERNAL_PROVIDER_COLOR);
-    provider.setPosition({ marginX, startY + lineH });
+    provider.setPosition({ externalMarginX, contentTop + lineH });
     m_window.draw(provider);
 
     sf::Text city(m_font, "City: " + snapshot.city, Config::BODY_FONT_SIZE);
     city.setFillColor(Config::EXTERNAL_LOCATION_COLOR);
-    city.setPosition({ marginX, startY + lineH * 2.f });
+    city.setPosition({ externalMarginX, contentTop + lineH * 2.f });
     m_window.draw(city);
 
     sf::Text country(m_font, "Country: " + snapshot.country, Config::BODY_FONT_SIZE);
     country.setFillColor(Config::STATUS_ACTIVE_COLOR);
-    country.setPosition({ marginX, startY + lineH * 3.f });
+    country.setPosition({ externalMarginX, contentTop + lineH * 3.f });
     m_window.draw(country);
 }
 
@@ -649,6 +944,42 @@ void ApplicationController::renderConnections()
     );
     const auto& panel = panelFor(panels, PanelId::ConnectionVisualizer);
     const auto connections = m_data.connections->getData();
+    m_visualizerModeButtonBounds.clear();
+
+    if (m_fontLoaded) {
+        float rightEdge = panel.x + panel.w - Config::PANEL_INNER_PADDING;
+        const float buttonY = panel.y + Config::PANEL_TITLE_OFFSET_Y - 1.f;
+        m_visualizerModeButtonBounds.resize(kVisualizerModeLabels.size());
+
+        for (std::size_t reverse = 0; reverse < kVisualizerModeLabels.size(); ++reverse) {
+            const std::size_t i = kVisualizerModeLabels.size() - 1 - reverse;
+            sf::Text label(m_font, std::string(kVisualizerModeLabels[i]), Config::BODY_FONT_SIZE);
+            const sf::FloatRect textBounds = label.getLocalBounds();
+            const float buttonWidth = textBounds.size.x + Config::MODE_BUTTON_PADDING_X * 2.f;
+            const float buttonHeight = textBounds.size.y + Config::MODE_BUTTON_PADDING_Y * 2.f;
+            const float buttonX = rightEdge - buttonWidth;
+
+            m_visualizerModeButtonBounds[i] = sf::FloatRect(
+                { buttonX, buttonY },
+                { buttonWidth, buttonHeight }
+            );
+            rightEdge = buttonX - Config::MODE_BUTTON_SPACING;
+        }
+
+        for (std::size_t i = 0; i < kVisualizerModeLabels.size(); ++i) {
+            const auto& bounds = m_visualizerModeButtonBounds[i];
+            drawPillButton(m_window, bounds, i == m_selectedVisualizerMode);
+
+            sf::Text label(m_font, std::string(kVisualizerModeLabels[i]), Config::BODY_FONT_SIZE);
+            const sf::FloatRect textBounds = label.getLocalBounds();
+            label.setPosition({
+                bounds.position.x + Config::MODE_BUTTON_PADDING_X - textBounds.position.x,
+                bounds.position.y + Config::MODE_BUTTON_PADDING_Y - textBounds.position.y
+            });
+            label.setFillColor(i == m_selectedVisualizerMode ? sf::Color { 20, 20, 20 } : Config::TEXT_SECONDARY_COLOR);
+            m_window.draw(label);
+        }
+    }
 
     static ConnectionVisualizer visualizer;
     visualizer.setViewport({
@@ -657,36 +988,14 @@ void ApplicationController::renderConnections()
     });
     visualizer.setConnections(connections);
     visualizer.setFont(m_fontLoaded ? &m_font : nullptr);
+    visualizer.setDisplayMode(static_cast<ConnectionVisualizer::DisplayMode>(std::min(
+        m_selectedVisualizerMode,
+        kVisualizerModeLabels.size() - 1
+    )));
     visualizer.draw(m_window);
 
     if (!m_fontLoaded) {
         return;
     }
 
-    int tcpCount = 0;
-    int udpCount = 0;
-    for (const auto& connection : connections) {
-        if (connection.protocol == ConnectionInfo::Protocol::TCP) {
-            ++tcpCount;
-        } else if (connection.protocol == ConnectionInfo::Protocol::UDP) {
-            ++udpCount;
-        }
-    }
-
-    const float statsY = panel.y + Config::CONNECTION_STATS_TOP;
-
-    sf::Text tcp(m_font, "TCP: " + std::to_string(tcpCount), Config::BODY_FONT_SIZE);
-    tcp.setFillColor(Config::CONNECTION_TCP_COLOR);
-    tcp.setPosition({ panel.x + Config::CONNECTION_STATS_OFFSET_X, statsY });
-    m_window.draw(tcp);
-
-    sf::Text udp(m_font, "UDP: " + std::to_string(udpCount), Config::BODY_FONT_SIZE);
-    udp.setFillColor(Config::CONNECTION_UDP_COLOR);
-    udp.setPosition({ panel.x + Config::CONNECTION_STATS_OFFSET_X + Config::CONNECTION_STAT_X, statsY });
-    m_window.draw(udp);
-
-    sf::Text total(m_font, "TOTAL: " + std::to_string(tcpCount + udpCount), Config::BODY_FONT_SIZE);
-    total.setFillColor(Config::CONNECTION_TOTAL_COLOR);
-    total.setPosition({ panel.x + Config::CONNECTION_STATS_OFFSET_X + Config::CONNECTION_STAT_X * 2.f, statsY });
-    m_window.draw(total);
 }

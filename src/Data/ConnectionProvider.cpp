@@ -111,12 +111,6 @@ bool ConnectionProvider::isMeaningfulRemote(const ConnectionInfo& conn)
     if (conn.remoteIP == "255.255.255.255")
         return false;
 
-    // tcp graph should focus on active links only; LISTEN/TIME_WAIT are local socket states
-    if (conn.protocol == ConnectionInfo::Protocol::TCP &&
-        conn.status != ConnectionInfo::Status::ESTABLISHED) {
-        return false;
-    }
-
     return true;
 }
 

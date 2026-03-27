@@ -49,4 +49,6 @@ private:
     std::vector<std::string>   m_interfaces;
     std::size_t                m_selectedInterface { 0 };
     std::vector<sf::FloatRect> m_ifaceButtonBounds;
+    std::size_t                m_selectedVisualizerMode { 0 };
+    std::vector<sf::FloatRect> m_visualizerModeButtonBounds;
 };
