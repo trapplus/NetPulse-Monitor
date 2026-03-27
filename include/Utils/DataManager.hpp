@@ -1,4 +1,5 @@
 #pragma once
+#include "Data/PacketSnifferProvider.hpp"
 #include <memory>
 
 // forward declaration - we only store a pointer here, full type not needed in this header
@@ -17,4 +18,5 @@ struct DataManager
     std::unique_ptr<NetworkDeviceProvider> networkDevices;
     std::unique_ptr<ConnectionProvider> connections;
     std::unique_ptr<ExternalAPIProvider> externalAPI;
+    std::unique_ptr<PacketSnifferProvider> packetSniffer;
 };
