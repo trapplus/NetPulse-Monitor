@@ -231,14 +231,6 @@ void drawPanelHeader(sf::RenderWindow& window,
     title.setFillColor(Config::HEADER_ICON_FILL_COLOR);
     title.setPosition({ textX, panel.y + Config::PANEL_TITLE_OFFSET_Y + Config::HEADER_TITLE_OFFSET_Y });
     window.draw(title);
-
-    drawRoundedRect(window,
-                    sf::FloatRect {
-                        { textX, panel.y + Config::PANEL_TITLE_OFFSET_Y + Config::HEADER_DIVIDER_OFFSET_Y },
-                        { Config::HEADER_DIVIDER_WIDTH, 3.f }
-                    },
-                    1.5f,
-                    Config::HEADER_DIVIDER_COLOR);
 }
 
 std::string truncateText(const std::string& value, std::size_t maxLen)
