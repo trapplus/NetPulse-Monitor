@@ -8,6 +8,7 @@
 #include <SFML/Graphics/Text.hpp>
 #include <SFML/Window/Mouse.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <unordered_map>
@@ -28,6 +29,11 @@ void ConnectionVisualizer::setConnections(const std::vector<ConnectionInfo>& con
 void ConnectionVisualizer::setFont(const sf::Font* font)
 {
     m_font = font;
+}
+
+void ConnectionVisualizer::setDisplayMode(DisplayMode mode)
+{
+    m_displayMode = mode;
 }
 
 sf::Color ConnectionVisualizer::statusColor(ConnectionInfo::Status status)
@@ -58,11 +64,16 @@ sf::Color ConnectionVisualizer::headerColorForIndex(std::size_t index)
 }
 
 std::vector<ConnectionVisualizer::PeerSummary>
-ConnectionVisualizer::buildPeerSummaries(const std::vector<ConnectionInfo>& connections)
+ConnectionVisualizer::buildPeerSummaries(const std::vector<ConnectionInfo>& connections, DisplayMode mode)
 {
     std::unordered_map<std::string, PeerSummary> merged;
 
     for (const auto& conn : connections) {
+        if (mode == DisplayMode::TCP && conn.protocol != ConnectionInfo::Protocol::TCP)
+            continue;
+        if (mode == DisplayMode::UDP && conn.protocol != ConnectionInfo::Protocol::UDP)
+            continue;
+
         auto [it, inserted] = merged.try_emplace(conn.remoteIP);
         if (inserted) {
             it->second.ip = conn.remoteIP;
@@ -102,12 +113,8 @@ void ConnectionVisualizer::draw(sf::RenderWindow& window)
         m_viewport.position.y + m_viewport.size.y * Config::CONNECTION_CENTER_RATIO
     };
 
-    auto peers = buildPeerSummaries(m_connections);
+    auto peers = buildPeerSummaries(m_connections, m_displayMode);
     if (peers.empty()) return;
-
-    // limiting visible peers keeps the graph readable instead of turning into a solid ring
-    if (peers.size() > Config::MAX_CONNECTION_VISUALIZER_PEERS)
-        peers.resize(Config::MAX_CONNECTION_VISUALIZER_PEERS);
 
     const float minDim = std::min(m_viewport.size.x, m_viewport.size.y);
     const float remoteRadius = std::max(Config::CONNECTION_MIN_REMOTE_RING_RADIUS,
@@ -122,9 +129,87 @@ void ConnectionVisualizer::draw(sf::RenderWindow& window)
     std::vector<PeerDrawData> peerDrawData;
     peerDrawData.reserve(count);
 
+    constexpr std::array<ConnectionInfo::Status, 4> stateOrder {
+        ConnectionInfo::Status::ESTABLISHED,
+        ConnectionInfo::Status::LISTEN,
+        ConnectionInfo::Status::TIME_WAIT,
+        ConnectionInfo::Status::OTHER
+    };
+    std::array<std::size_t, 4> stateCounts { 0, 0, 0, 0 };
+    std::array<float, 4> stateSegmentStarts { 0.f, 0.f, 0.f, 0.f };
+    std::array<float, 4> stateSegmentWidths { 0.f, 0.f, 0.f, 0.f };
+    if (m_displayMode == DisplayMode::State) {
+        for (const auto& peer : peers) {
+            for (std::size_t i = 0; i < stateOrder.size(); ++i) {
+                if (peer.status == stateOrder[i]) {
+                    ++stateCounts[i];
+                    break;
+                }
+            }
+        }
+
+        constexpr float fullTurn = 2.f * std::numbers::pi_v<float>;
+        constexpr float baseGap = 0.12f;
+        constexpr float minSegmentWidth = 0.45f;
+
+        std::size_t activeGroups = 0;
+        std::size_t totalPeers = 0;
+        for (std::size_t i = 0; i < stateCounts.size(); ++i) {
+            if (stateCounts[i] > 0) {
+                ++activeGroups;
+                totalPeers += stateCounts[i];
+            }
+        }
+
+        const float totalGap = baseGap * static_cast<float>(std::max<std::size_t>(0, activeGroups));
+        const float availableArc = std::max(1.f, fullTurn - totalGap);
+        const float baseRequired = minSegmentWidth * static_cast<float>(activeGroups);
+        const float extraArc = std::max(0.f, availableArc - baseRequired);
+
+        float cursor = -std::numbers::pi_v<float> * 0.5f;
+        for (std::size_t i = 0; i < stateCounts.size(); ++i) {
+            if (stateCounts[i] == 0) {
+                continue;
+            }
+
+            const float share = totalPeers > 0
+                ? static_cast<float>(stateCounts[i]) / static_cast<float>(totalPeers)
+                : 0.f;
+            const float segmentWidth = minSegmentWidth + share * extraArc;
+            stateSegmentStarts[i] = cursor;
+            stateSegmentWidths[i] = segmentWidth;
+            cursor += segmentWidth + baseGap;
+        }
+    }
+
+    std::array<std::size_t, 4> stateOffsets { 0, 0, 0, 0 };
     for (std::size_t i = 0; i < count; ++i) {
-        const float angle = (2.f * std::numbers::pi_v<float> * static_cast<float>(i))
-                            / static_cast<float>(count);
+        float angle = 0.f;
+        if (m_displayMode == DisplayMode::State) {
+            std::size_t groupIndex = stateOrder.size() - 1;
+            for (std::size_t stateIndex = 0; stateIndex < stateOrder.size(); ++stateIndex) {
+                if (peers[i].status == stateOrder[stateIndex]) {
+                    groupIndex = stateIndex;
+                    break;
+                }
+            }
+
+            const float segmentStart = stateSegmentStarts[groupIndex];
+            const float segmentWidth = stateSegmentWidths[groupIndex];
+            const float usableWidth = std::max(0.18f, segmentWidth - 0.08f);
+            const std::size_t localCount = std::max<std::size_t>(1, stateCounts[groupIndex]);
+            const std::size_t localIndex = stateOffsets[groupIndex]++;
+
+            if (localCount == 1) {
+                angle = segmentStart + segmentWidth * 0.5f;
+            } else {
+                const float t = static_cast<float>(localIndex) / static_cast<float>(localCount - 1);
+                angle = segmentStart + 0.04f + t * usableWidth;
+            }
+        } else {
+            angle = (2.f * std::numbers::pi_v<float> * static_cast<float>(i))
+                  / static_cast<float>(count);
+        }
 
         const sf::Vector2f remote {
             center.x + std::cos(angle) * remoteRadius,
@@ -172,6 +257,29 @@ void ConnectionVisualizer::draw(sf::RenderWindow& window)
     window.draw(localNode);
 
     if (m_font) {
+        if (m_displayMode == DisplayMode::State) {
+            for (std::size_t i = 0; i < stateOrder.size(); ++i) {
+                if (stateCounts[i] == 0)
+                    continue;
+
+                const float angle = stateSegmentStarts[i] + stateSegmentWidths[i] * 0.5f;
+                const sf::Vector2f labelPos {
+                    center.x + std::cos(angle) * (remoteRadius + Config::CONNECTION_GROUP_LABEL_OFFSET_Y),
+                    center.y + std::sin(angle) * (remoteRadius + Config::CONNECTION_GROUP_LABEL_OFFSET_Y)
+                };
+
+                sf::Text label(*m_font, statusLabel(stateOrder[i]), Config::BODY_FONT_SIZE);
+                const sf::FloatRect labelBounds = label.getLocalBounds();
+                label.setOrigin({
+                    labelBounds.position.x + labelBounds.size.x * 0.5f,
+                    labelBounds.position.y + labelBounds.size.y * 0.5f
+                });
+                label.setPosition(labelPos);
+                label.setFillColor(statusColor(stateOrder[i]));
+                window.draw(label);
+            }
+        }
+
         const sf::Vector2i mousePixels = sf::Mouse::getPosition(window);
         const sf::Vector2f mouse {
             static_cast<float>(mousePixels.x),
