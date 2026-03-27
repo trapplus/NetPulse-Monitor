@@ -20,7 +20,15 @@ inline constexpr std::chrono::milliseconds WORKER_SLEEP_INTERVAL { 250 };
 inline constexpr std::chrono::milliseconds API_CONNECT_TIMEOUT { 3000 };
 inline constexpr std::chrono::milliseconds API_REQUEST_TIMEOUT { 5000 };
 
-inline constexpr int REQUEST_LOG_LIMIT = 100;
+inline constexpr std::size_t REQUEST_LOG_LIMIT = 100;
+
+// packet sniffer UI
+inline constexpr float IFACE_BUTTON_PADDING_X  = 4.f;
+inline constexpr float IFACE_BUTTON_PADDING_Y  = 2.f;
+inline constexpr float IFACE_BUTTON_SPACING    = 4.f;
+inline constexpr float REQUEST_LOG_TIME_OFFSET   = 58.f;
+inline constexpr float REQUEST_LOG_METHOD_OFFSET = 62.f;
+inline constexpr float REQUEST_LOG_HOST_OFFSET   = 190.f;
 
 inline constexpr float PANEL_PADDING = 12.f;
 inline constexpr float PANEL_INNER_PADDING = 14.f;
@@ -82,6 +90,10 @@ inline constexpr sf::Color EXTERNAL_LOCATION_COLOR { 130, 170, 230 };
 inline constexpr sf::Color CONNECTION_TCP_COLOR { 110, 210, 120 };
 inline constexpr sf::Color CONNECTION_UDP_COLOR { 110, 170, 235 };
 inline constexpr sf::Color CONNECTION_TOTAL_COLOR { 225, 190, 105 };
+inline constexpr sf::Color REQUEST_LOG_POST_COLOR { 220, 100,  80 };
+inline constexpr sf::Color REQUEST_LOG_DELETE_COLOR { 100, 140, 220 };
+inline constexpr sf::Color REQUEST_LOG_PATCH_COLOR { 210, 140,  60 };
+inline constexpr sf::Color REQUEST_LOG_OPTIONS_COLOR { 160, 100, 210 };
 inline constexpr sf::Color CONNECTION_LOCAL_NODE_COLOR { 220, 220, 220 };
 inline constexpr sf::Color TOOLTIP_FILL_COLOR { 20, 22, 28, 230 };
 inline constexpr sf::Color TOOLTIP_OUTLINE_COLOR { 80, 90, 110 };

@@ -292,6 +292,6 @@ NetPulse/
 | M4 | Блок 4: Network Devices (ARP) | ✅ |
 | M5 | Блок 5: Connection Visualization | ✅ |
 | M6 | Блок 3: External IP (libcurl) | ⬜ |
-| M7 | Блок 2: Packet Sniffer (libpcap) | ⬜ |
+| M7 | Блок 2: Packet Sniffer (libpcap) | ✅ |
 | M8 | UI-полировка, анимации | ⬜ |
 | M9 | README, документация, демо | ⬜ |

@@ -3,6 +3,7 @@
 #include <SFML/Graphics.hpp>
 #include <atomic>
 #include <thread>
+#include <vector>
 
 // owns the SFML window, the data thread, and all providers via DataManager
 // render methods must only be called from the main thread - SFML requirement
@@ -28,6 +29,7 @@ private:
 
     // reads from systemInfo provider and draws the tool table in block 1
     void renderSystemInfo();
+    void renderRequestLog();
     // reads from networkDevices provider and draws ARP rows in block 4
     void renderNetworkDevices();
     // reads from externalAPI provider and draws external IP/ISP/location in block 3
@@ -43,4 +45,8 @@ private:
     std::thread       m_dataThread;
     std::thread       m_apiThread;
     std::atomic<bool> m_running { true };
+
+    std::vector<std::string>   m_interfaces;
+    std::size_t                m_selectedInterface { 0 };
+    std::vector<sf::FloatRect> m_ifaceButtonBounds;
 };
