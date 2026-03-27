@@ -1,4 +1,5 @@
 #pragma once
+#include "Data/PacketSnifferProvider.hpp"
 #include <memory>
 
 // forward declaration - we only store a pointer here, full type not needed in this header
@@ -7,6 +8,7 @@ class SystemInfoProvider;
 class NetworkDeviceProvider;
 class ConnectionProvider;
 class ExternalAPIProvider;
+class PacketSnifferProvider;
 
 // central place that owns all data providers
 // ApplicationController creates and stores this, render methods read from it
@@ -17,4 +19,5 @@ struct DataManager
     std::unique_ptr<NetworkDeviceProvider> networkDevices;
     std::unique_ptr<ConnectionProvider> connections;
     std::unique_ptr<ExternalAPIProvider> externalAPI;
+    std::unique_ptr<PacketSnifferProvider> packetSniffer;
 };
