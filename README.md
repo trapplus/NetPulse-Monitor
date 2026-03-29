@@ -15,7 +15,7 @@ Visualizes active connections, network devices, HTTP traffic, system tool versio
 
 ## Preview
 
-![demo](.github/img/demo.png)
+![demo](.github/img/preview.png)
 
 
 ---
