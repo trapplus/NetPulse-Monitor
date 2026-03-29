@@ -23,6 +23,19 @@ inline constexpr std::chrono::milliseconds API_CONNECT_TIMEOUT { 3000 };
 inline constexpr std::chrono::milliseconds API_REQUEST_TIMEOUT { 5000 };
 
 inline constexpr std::size_t REQUEST_LOG_LIMIT = 100;
+inline constexpr int PCAP_SNAP_LEN = 65535; // capture full packets to avoid truncating HTTP headers
+inline constexpr int PCAP_PROMISCUOUS = 0; // keep sniffing local-only to reduce noisy traffic
+inline constexpr int PCAP_READ_TIMEOUT_MS = 100; // short timeout keeps capture loop responsive
+inline constexpr int PCAP_MAX_PACKETS_PER_DISPATCH = 50; // bound per-tick packet processing work
+inline constexpr int PCAP_PROBE_SNAP_LEN = 96; // tiny probe capture used only for interface capability checks
+inline constexpr int PCAP_PROBE_TIMEOUT_MS = 1; // probe quickly so startup interface scan stays fast
+inline constexpr const char* PCAP_BPF_FILTER =
+    "tcp port 80 or tcp port 443 or tcp port 8080 or tcp port 3000 or tcp port 5000 or tcp port 8000"; // request-log port whitelist
+inline constexpr std::size_t REQUEST_LOG_MAX_PATH_LEN = 80; // path column max width before truncation
+inline constexpr std::size_t REQUEST_LOG_MAX_HOST_LEN = 60; // host column max width before truncation
+inline constexpr std::size_t HTTP_MIN_METHOD_BYTES = 4; // shortest supported verb is "GET "
+inline constexpr int HTTPS_PORT = 443; // HTTPS rows are tagged as encrypted payloads
+inline constexpr std::size_t SYSTEM_INFO_VERSION_MAX_LEN = 40; // keep version strings inside the system-info column
 
 // packet sniffer UI
 inline constexpr float IFACE_BUTTON_PADDING_X  = 8.f;

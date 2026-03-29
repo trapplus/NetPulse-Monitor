@@ -17,6 +17,9 @@ set(SOURCES
     src/Data/ConnectionProvider.cpp
     src/Render/DashboardRenderer.cpp
     src/Render/ConnectionVisualizer.cpp
+    src/Render/UIDrawUtils.cpp
+    src/Render/UIFormatUtils.cpp
+    src/Render/BlockRenderers.cpp
     src/Render/UI/Panel.cpp
     src/Render/UI/TextBlock.cpp
     src/Render/UI/Button.cpp
