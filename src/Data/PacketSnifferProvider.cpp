@@ -14,12 +14,6 @@
 #include <vector>
 
 namespace {
-constexpr int SNAP_LEN = 65535;
-constexpr int PROMISCUOUS_MODE = 0;
-constexpr int READ_TIMEOUT_MS = 100;
-constexpr int MAX_PACKETS_PER_DISPATCH = 50;
-constexpr const char* REQUEST_FILTER =
-    "tcp port 80 or tcp port 443 or tcp port 8080 or tcp port 3000 or tcp port 5000 or tcp port 8000";
 constexpr std::size_t ETHERNET_HEADER_LEN = 14;
 constexpr std::size_t LINUX_SLL_HEADER_LEN = 16;
 constexpr std::size_t IPV4_MIN_HEADER_LEN = 20;
@@ -33,10 +27,6 @@ constexpr std::size_t TCP_DST_PORT_OFFSET = 2;
 constexpr std::size_t TCP_DATA_OFFSET = 12;
 constexpr int IPV4_VERSION = 4;
 constexpr int TCP_PROTOCOL = 6;
-constexpr int HTTPS_PORT = 443;
-constexpr std::size_t MAX_PATH_LEN = 80;
-constexpr std::size_t MAX_HOST_LEN = 60;
-constexpr std::size_t MIN_METHOD_BYTES = 4;
 
 bool startsWith(const u_char* payload, std::size_t len, const char* pattern, std::size_t patternLen)
 {
@@ -60,9 +50,6 @@ PacketSnifferProvider::PacketSnifferProvider()
     pcap_if_t* allDevices = nullptr;
 
     if (pcap_findalldevs(&allDevices, errbuf) == 0 && allDevices != nullptr) {
-        constexpr int PROBE_SNAPLEN = 96;
-        constexpr int PROBE_TIMEOUT_MS = 1;
-
         // pcap_findalldevs returns everything including bluetooth, nflog, and dbus pseudo-interfaces
         // that don't support BPF — probe each one and keep only those we can actually parse
         for (pcap_if_t* dev = allDevices; dev != nullptr; dev = dev->next) {
@@ -71,7 +58,13 @@ PacketSnifferProvider::PacketSnifferProvider()
             }
 
             char probeErr[PCAP_ERRBUF_SIZE] = {};
-            pcap_t* probe = pcap_open_live(dev->name, PROBE_SNAPLEN, 0, PROBE_TIMEOUT_MS, probeErr);
+            pcap_t* probe = pcap_open_live(
+                dev->name,
+                Config::PCAP_PROBE_SNAP_LEN,
+                Config::PCAP_PROMISCUOUS,
+                Config::PCAP_PROBE_TIMEOUT_MS,
+                probeErr
+            );
             if (probe == nullptr) {
                 continue;
             }
@@ -117,9 +110,9 @@ bool PacketSnifferProvider::openHandle()
     // 100ms timeout lets libpcap wake up frequently so the worker loop stays responsive when traffic is quiet.
     m_handle = pcap_open_live(
         m_interface.c_str(),
-        SNAP_LEN,
-        PROMISCUOUS_MODE,
-        READ_TIMEOUT_MS,
+        Config::PCAP_SNAP_LEN,
+        Config::PCAP_PROMISCUOUS,
+        Config::PCAP_READ_TIMEOUT_MS,
         errbuf
     );
 
@@ -138,7 +131,7 @@ bool PacketSnifferProvider::openHandle()
     m_datalink = pcap_datalink(m_handle);
 
     bpf_program filterProgram {};
-    if (pcap_compile(m_handle, &filterProgram, REQUEST_FILTER, 1, PCAP_NETMASK_UNKNOWN) != 0) {
+    if (pcap_compile(m_handle, &filterProgram, Config::PCAP_BPF_FILTER, 1, PCAP_NETMASK_UNKNOWN) != 0) {
         Log::warn(std::string("PacketSnifferProvider: pcap_compile failed: ") + pcap_geterr(m_handle));
         closeHandle();
         return false;
@@ -194,7 +187,7 @@ void PacketSnifferProvider::fetch()
     // dispatch with a fixed packet budget keeps each tick bounded; loop() would block and starve other providers.
     pcap_dispatch(
         m_handle,
-        MAX_PACKETS_PER_DISPATCH,
+        Config::PCAP_MAX_PACKETS_PER_DISPATCH,
         packetCallback,
         reinterpret_cast<u_char*>(this)
     );
@@ -324,17 +317,17 @@ bool PacketSnifferProvider::parseHTTP(
     out.payloadBytes = payloadBytes;
     out.timestamp = std::chrono::system_clock::now();
 
-    if (dstPort == HTTPS_PORT) {
+    if (dstPort == Config::HTTPS_PORT) {
         // HTTPS payload is encrypted, but we still keep a lightweight row so users see encrypted traffic volume.
         out.isEncrypted = true;
         out.method.clear();
         out.path.clear();
         out.host = dstIP;
-        out.dstPort = HTTPS_PORT;
+        out.dstPort = Config::HTTPS_PORT;
         return true;
     }
 
-    if (len < MIN_METHOD_BYTES) {
+    if (len < Config::HTTP_MIN_METHOD_BYTES) {
         return false;
     }
 
@@ -382,7 +375,7 @@ bool PacketSnifferProvider::parseHTTP(
     if (secondSpace > firstSpace + 1) {
         const auto pathLen = secondSpace - (firstSpace + 1);
         out.path.assign(reinterpret_cast<const char*>(payload + firstSpace + 1), pathLen);
-        out.path = truncateValue(out.path, MAX_PATH_LEN);
+        out.path = truncateValue(out.path, Config::REQUEST_LOG_MAX_PATH_LEN);
     } else {
         out.path.clear();
     }
@@ -409,7 +402,7 @@ bool PacketSnifferProvider::parseHTTP(
 
         if (valueEnd > valueStart) {
             out.host.assign(reinterpret_cast<const char*>(payload + valueStart), valueEnd - valueStart);
-            out.host = truncateValue(out.host, MAX_HOST_LEN);
+            out.host = truncateValue(out.host, Config::REQUEST_LOG_MAX_HOST_LEN);
         }
         break;
     }
