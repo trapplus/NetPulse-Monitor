@@ -117,7 +117,7 @@ NetPulse-Monitor/
 | M6 - Block 3: External IP | ✅ |
 | M7 - Block 2: Packet Sniffer | ✅ |
 | M8 - UI polish, animations | ✅ |
-| M9 - Fix logic bugs and final refactor | ⬜ |
+| M9 - Fix logic bugs and final refactor | ✅ |
 | M10 - Docs, demo | ⬜ |
 
 ---
