@@ -1,3 +1,4 @@
+#include "App/Config.hpp"
 #include "Data/SystemInfoProvider.hpp"
 #include <array>
 #include <cstdio>    // explicit — popen/fgets/pclose are C stdio, not guaranteed transitively
@@ -98,7 +99,9 @@ ToolInfo SystemInfoProvider::queryTool(const std::string& name,
     }
 
     // cap version string so it fits in the UI column
-    if (ver.size() > 40) ver = ver.substr(0, 37) + "...";
+    if (ver.size() > Config::SYSTEM_INFO_VERSION_MAX_LEN) {
+        ver = ver.substr(0, Config::SYSTEM_INFO_VERSION_MAX_LEN - 3) + "...";
+    }
     info.version = ver;
 
     if (statusCmd) {

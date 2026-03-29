@@ -1,6 +1,12 @@
 #include "Data/NetworkDeviceProvider.hpp"
+#include <cstdint>
 #include <fstream>
 #include <sstream>
+
+namespace {
+// /proc/net/arp flag bit 0x2 marks entries where address resolution finished successfully.
+constexpr uint32_t kArpFlagComplete = 0x2U;
+}
 
 NetworkDeviceProvider::NetworkDeviceProvider() = default;
 NetworkDeviceProvider::~NetworkDeviceProvider() = default;
@@ -42,7 +48,7 @@ void NetworkDeviceProvider::fetch()
         device.ip = std::move(ip);
         device.mac = std::move(mac);
         device.iface = std::move(iface);
-        device.status = ((flags & 0x2U) != 0U) ? "Complete" : "Incomplete";
+        device.status = ((flags & kArpFlagComplete) != 0U) ? "Complete" : "Incomplete";
         fresh.push_back(std::move(device));
     }
 
